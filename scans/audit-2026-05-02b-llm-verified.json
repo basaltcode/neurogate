@@ -1,0 +1,56 @@
+[
+  {
+    "name": "nvidia:glm-4.7",
+    "kind": "nvidia",
+    "model": "z-ai/glm-4.7",
+    "status": "rejected_http",
+    "http_code": 404,
+    "detail": "nvidia:glm-4.7 HTTP 404: 404 page not found\n",
+    "identity_reply": ""
+  },
+  {
+    "name": "nvidia:minimax-m2.7",
+    "kind": "nvidia",
+    "model": "minimaxai/minimax-m2.7",
+    "status": "error",
+    "http_code": null,
+    "detail": "nvidia:minimax-m2.7 empty response",
+    "identity_reply": ""
+  },
+  {
+    "name": "nvidia:step-3.5-flash",
+    "kind": "nvidia",
+    "model": "stepfun-ai/step-3.5-flash",
+    "status": "error",
+    "http_code": null,
+    "detail": "nvidia:step-3.5-flash empty response",
+    "identity_reply": ""
+  },
+  {
+    "name": "nvidia:qwen3-coder-480b",
+    "kind": "nvidia",
+    "model": "qwen/qwen3-coder-480b-a35b-instruct",
+    "status": "confirmed_unverified",
+    "http_code": 200,
+    "detail": "identity ambiguous — manual review",
+    "identity_reply": "I am Qwen, a large-scale language model independently developed by Alibaba Cloud's Tongyi Lab."
+  },
+  {
+    "name": "nvidia:seed-oss-36b",
+    "kind": "nvidia",
+    "model": "bytedance/seed-oss-36b-instruct",
+    "status": "error",
+    "http_code": null,
+    "detail": "nvidia:seed-oss-36b empty response",
+    "identity_reply": ""
+  },
+  {
+    "name": "nvidia:mistral-nemotron",
+    "kind": "nvidia",
+    "model": "mistralai/mistral-nemotron",
+    "status": "confirmed_unverified",
+    "http_code": 200,
+    "detail": "identity ambiguous — manual review",
+    "identity_reply": "I am Mistral AI's Mistral-8x7B model."
+  }
+]

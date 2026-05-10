@@ -1,0 +1,122 @@
+name: audit-weekly
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'   # Monday 07:00 UTC = 10:00 MSK
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Sync deps
+        run: uv sync --frozen
+
+      - name: Run audit
+        run: bash scans/run_weekly_audit.sh
+        env:
+          GROQ_API_KEY:        ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY:  ${{ secrets.OPENROUTER_API_KEY }}
+          CEREBRAS_API_KEY:    ${{ secrets.CEREBRAS_API_KEY }}
+          SAMBANOVA_API_KEY:   ${{ secrets.SAMBANOVA_API_KEY }}
+          NVIDIA_API_KEY:      ${{ secrets.NVIDIA_API_KEY }}
+          MISTRAL_API_KEY:     ${{ secrets.MISTRAL_API_KEY }}
+          ZAI_API_KEY:         ${{ secrets.ZAI_API_KEY }}
+
+      - name: Commit snapshot if changed
+        run: |
+          git config user.name "audit-bot"
+          git config user.email "audit-bot@users.noreply.github.com"
+          # stage allowlisted audit artefacts only
+          git add -f scans/catalog-snapshot.json
+          git add -f scans/audit-*-verified.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "no changes to commit"
+            exit 0
+          fi
+          git commit -m "audit: weekly run $(date -u +%F)"
+          git push
+
+      - name: Upload audit artefacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: audit-${{ github.run_id }}
+          path: |
+            scans/catalog-snapshot.json
+            scans/audit-*.json
+          if-no-files-found: ignore
+          retention-days: 90
+
+      - name: Notify Telegram
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          JOB_STATUS:         ${{ job.status }}
+          RUN_URL:            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 <<'PY'
+          import json, glob, os, sys, urllib.request, urllib.parse
+          from collections import Counter
+          from datetime import date
+
+          bot = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+          chat = os.environ.get("TELEGRAM_CHAT_ID", "")
+          if not bot or not chat:
+              print("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set — skipping notify")
+              sys.exit(0)
+
+          status = os.environ.get("JOB_STATUS", "?")
+          run_url = os.environ["RUN_URL"]
+          today = date.today().isoformat()
+
+          if status != "success":
+              msg = f"❌ neurogate audit FAILED ({today})\n{run_url}"
+          else:
+              files = sorted(glob.glob("scans/audit-*-verified.json"))
+              data = json.loads(open(files[-1]).read()) if files else []
+              if not data:
+                  msg = f"✅ neurogate audit {today}: no new candidates"
+              else:
+                  c = Counter(v["status"] for v in data)
+                  lines = [f"🔍 neurogate audit {today}",
+                           f"new candidates: {len(data)}"]
+                  for st in ("confirmed", "confirmed_unverified",
+                             "rejected_dedup", "rejected_http",
+                             "rejected_identity", "error"):
+                      if c.get(st):
+                          lines.append(f"  • {st}: {c[st]}")
+                  confirmed = [v["name"] for v in data if v["status"] == "confirmed"]
+                  if confirmed:
+                      lines.append("")
+                      lines.append("confirmed:")
+                      for name in confirmed[:10]:
+                          lines.append(f"  ✅ {name}")
+                      if len(confirmed) > 10:
+                          lines.append(f"  ... and {len(confirmed) - 10} more")
+                  lines.append("")
+                  lines.append(run_url)
+                  msg = "\n".join(lines)
+
+          body = urllib.parse.urlencode({
+              "chat_id": chat, "text": msg, "disable_web_page_preview": "true"
+          }).encode()
+          req = urllib.request.Request(
+              f"https://api.telegram.org/bot{bot}/sendMessage", data=body)
+          try:
+              with urllib.request.urlopen(req, timeout=15) as r:
+                  print(r.status, r.read()[:200])
+          except Exception as e:
+              print(f"telegram send failed: {e!r}")
+              # не валим workflow из-за уведомления
+              sys.exit(0)
+          PY

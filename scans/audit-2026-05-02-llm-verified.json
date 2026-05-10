@@ -1,0 +1,74 @@
+[
+  {
+    "name": "nvidia:deepseek-v4-flash",
+    "kind": "nvidia",
+    "model": "deepseek-ai/deepseek-v4-flash",
+    "status": "rejected_identity",
+    "http_code": 200,
+    "detail": "identity mismatch (claimed vs reported)",
+    "identity_reply": "My exact model name is DeepSeek-V2.5, with the version being DeepSeek-V2.5-1210."
+  },
+  {
+    "name": "nvidia:deepseek-v4-pro",
+    "kind": "nvidia",
+    "model": "deepseek-ai/deepseek-v4-pro",
+    "status": "error",
+    "http_code": null,
+    "detail": "ReadTimeout('')",
+    "identity_reply": ""
+  },
+  {
+    "name": "gemini:gemma-4-31b-it",
+    "kind": "gemini",
+    "model": "gemma-4-31b-it",
+    "status": "error",
+    "http_code": null,
+    "detail": "500 INTERNAL. {'error': {'code': 500, 'message': 'Internal error encountered.', 'status': 'INTERNAL'}}",
+    "identity_reply": ""
+  },
+  {
+    "name": "openrouter:qwen3-next-80b-a3b-free",
+    "kind": "openrouter",
+    "model": "qwen/qwen3-next-80b-a3b-instruct:free",
+    "status": "rejected_dedup",
+    "http_code": null,
+    "detail": "already in config.yaml",
+    "identity_reply": ""
+  },
+  {
+    "name": "sambanova:minimax-m2.5",
+    "kind": "sambanova",
+    "model": "MiniMax-M2.5",
+    "status": "rejected_http",
+    "http_code": 422,
+    "detail": "sambanova:minimax-m2.5 HTTP 422: Couldn't find valid service tier! Please contact your administrator\n",
+    "identity_reply": ""
+  },
+  {
+    "name": "github:gpt-5-mini",
+    "kind": "github",
+    "model": "openai/gpt-5-mini",
+    "status": "rejected_http",
+    "http_code": 400,
+    "detail": "github:gpt-5-mini HTTP 400: {\"error\":{\"code\":\"unavailable_model\",\"message\":\"Unavailable model: gpt-5-mini\",\"details\":\"Unavailable model: gpt-5-mini\"}}",
+    "identity_reply": ""
+  },
+  {
+    "name": "github:gpt-5-nano",
+    "kind": "github",
+    "model": "openai/gpt-5-nano",
+    "status": "rejected_http",
+    "http_code": 400,
+    "detail": "github:gpt-5-nano HTTP 400: {\"error\":{\"code\":\"unavailable_model\",\"message\":\"Unavailable model: gpt-5-nano\",\"details\":\"Unavailable model: gpt-5-nano\"}}",
+    "identity_reply": ""
+  },
+  {
+    "name": "github:o4-mini",
+    "kind": "github",
+    "model": "openai/o4-mini",
+    "status": "rejected_http",
+    "http_code": 400,
+    "detail": "github:o4-mini HTTP 400: {\"error\":{\"code\":\"unavailable_model\",\"message\":\"Unavailable model: o4-mini\",\"details\":\"Unavailable model: o4-mini\"}}",
+    "identity_reply": ""
+  }
+]

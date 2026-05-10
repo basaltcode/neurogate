@@ -1,0 +1,136 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    # Только когда меняется реально-деплоимое. Audit-bot коммитит в scans/,
+    # docs-only PR'ы и собственные правки workflow'ов деплой не триггерят.
+    paths:
+      - 'src/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'config.yaml'
+      - 'config.yaml.example'
+      - '.env.example'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure SSH
+        env:
+          SSH_KEY:   ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$PROD_HOST" >> ~/.ssh/known_hosts
+
+      - name: Backup remote config.yaml
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_PATH: ${{ secrets.PROD_PATH }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${PROD_USER}@${PROD_HOST}" \
+            "cp ${PROD_PATH}/config.yaml ${PROD_PATH}/config.yaml.bak.\$(date -u +%FT%H%M%S) 2>/dev/null || true"
+
+      - name: Rsync to prod
+        # --delete с консервативным exclude-list:
+        # - не sync'аем секреты (.env), runtime state (stats.db*), CI/git (.git/, .github/),
+        #   локальный dev (.venv, __pycache__, .pytest_cache, .ruff_cache),
+        #   приватные scratch-области (.internal/, .claude/, fetchtest/, tests/, scans/, docs/),
+        #   деплой-доки (deploy.md, plans.md, apicount.md, megadeepsearch.md),
+        #   созданные на проде бэкапы (*.bak.*) и ассеты вне git (logo.png).
+        # --no-owner --no-group: не пытаемся переименовать UID 501 (mac) на runner UID 1001.
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_PATH: ${{ secrets.PROD_PATH }}
+        run: |
+          rsync -az --delete --no-owner --no-group \
+            --exclude='.git/' --exclude='.github/' \
+            --exclude='.venv/' --exclude='__pycache__/' \
+            --exclude='.pytest_cache/' --exclude='.ruff_cache/' \
+            --exclude='.env' \
+            --exclude='stats.db' --exclude='stats.db-shm' --exclude='stats.db-wal' \
+            --exclude='.internal/' --exclude='.claude/' \
+            --exclude='fetchtest/' --exclude='tests/' --exclude='scans/' --exclude='docs/' \
+            --exclude='deploy.md' --exclude='plans.md' \
+            --exclude='apicount.md' --exclude='megadeepsearch.md' \
+            --exclude='*.bak.*' --exclude='logo.png' \
+            -e 'ssh -i ~/.ssh/id_ed25519' \
+            ./ "${PROD_USER}@${PROD_HOST}:${PROD_PATH}/"
+
+      - name: Sync deps + restart service
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_PATH: ${{ secrets.PROD_PATH }}
+          PROD_SERVICE: ${{ secrets.PROD_SERVICE }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${PROD_USER}@${PROD_HOST}" \
+            "cd ${PROD_PATH} && /root/.local/bin/uv sync && systemctl restart ${PROD_SERVICE}"
+
+      - name: Health check
+        env:
+          PROD_HEALTH_URL: ${{ secrets.PROD_HEALTH_URL }}
+        run: |
+          sleep 5
+          for i in 1 2 3 4 5 6 7 8; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' "$PROD_HEALTH_URL" || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "health ok (attempt $i)"
+              exit 0
+            fi
+            echo "attempt $i: HTTP $code, retrying in 3s..."
+            sleep 3
+          done
+          echo "health check failed after 8 attempts"
+          exit 1
+
+      - name: Notify Telegram
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          JOB_STATUS:         ${{ job.status }}
+          RUN_URL:            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA:         ${{ github.sha }}
+          COMMIT_MSG:         ${{ github.event.head_commit.message }}
+        run: |
+          python3 <<'PY'
+          import os, sys, urllib.request, urllib.parse
+          bot = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+          chat = os.environ.get("TELEGRAM_CHAT_ID", "")
+          if not bot or not chat:
+              print("telegram secrets missing — skip notify"); sys.exit(0)
+          status = os.environ.get("JOB_STATUS", "?")
+          run_url = os.environ["RUN_URL"]
+          sha = (os.environ.get("COMMIT_SHA") or "")[:7]
+          msg_first = ((os.environ.get("COMMIT_MSG") or "").splitlines() or [""])[0][:80]
+          icon = "🚀" if status == "success" else "💥"
+          text = f"{icon} neurogate deploy: {status}\n{sha} {msg_first}\n{run_url}"
+          body = urllib.parse.urlencode({
+              "chat_id": chat, "text": text, "disable_web_page_preview": "true"
+          }).encode()
+          req = urllib.request.Request(
+              f"https://api.telegram.org/bot{bot}/sendMessage", data=body)
+          try:
+              with urllib.request.urlopen(req, timeout=15) as r:
+                  print(r.status)
+          except Exception as e:
+              print(f"telegram failed: {e!r}")
+              sys.exit(0)
+          PY

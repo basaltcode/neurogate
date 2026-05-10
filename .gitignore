@@ -1,0 +1,39 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+config.yaml
+deploy.md
+warnind.md
+*.egg-info/
+dist/
+build/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.DS_Store
+stats.db
+stats.db-shm
+stats.db-wal
+
+# internal / private (never publish) — using `dir/*` so allowlist below works
+# (git can't re-include a file from an excluded directory).
+.internal/
+fetchtest/
+scans/*
+docs/chains/
+docs/features/*
+docs/scans/
+tests/
+
+# allowlist — audit pipeline needs to be in repo for CI
+!scans/audit_catalog.py
+!scans/audit_verifier.py
+!scans/run_weekly_audit.sh
+!scans/catalog-snapshot.json
+!scans/paid_models_blocklist.yaml
+!scans/audit-*-verified.json
+!docs/features/auto-audit-and-add-models.md
+
+# Local backups
+.git.backup-pre-oss/

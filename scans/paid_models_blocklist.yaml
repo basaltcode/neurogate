@@ -1,0 +1,31 @@
+# Substring deny-list for vendors that don't expose pricing programmatically.
+# audit_catalog.py пропускает модель если её id содержит ЛЮБУЮ из подстрок.
+# Дополняет pricing-check для openrouter (там используется поле pricing из /v1/models).
+#
+# Не покрывает: groq, cerebras, sambanova — у них нет paid-only моделей,
+# все доступны на free-tier с rate-limits.
+# NVIDIA NIM не покрывается — там не «free vs paid» модели, а единый billable
+# starter-credit пул. См. open question #9 про balance monitor.
+
+mistral:
+  # paid-tier модели по docs.mistral.ai/getting-started/models
+  - mistral-large
+  - pixtral-large
+  - codestral
+  - ministral
+  - mistral-medium
+  - mistral-saba
+  - mistral-embed       # на всякий случай — embed не должен попасть через _looks_like_chat
+  - mistral-moderation
+
+zai:
+  # обнаружено эмпирически 2026-04-29: glm-5.1 → 1113 Insufficient balance
+  - glm-5
+
+# OpenRouter тут не нужен — для него используется pricing field из /v1/models.
+# Но если хочется forced-block по конкретной модели — можно добавить.
+openrouter:
+  # zero-priced модели через расширения OR (`:online`, `:nitro`) могут стоить —
+  # safer-by-default отбрасываем все варианты с этими тегами:
+  - ":online"
+  - ":nitro"

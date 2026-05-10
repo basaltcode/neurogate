@@ -1,0 +1,2596 @@
+# llmgate — full reference config (example).
+#
+# Quick start:
+#   1. cp config.yaml.example config.yaml
+#   2. Удали из config.yaml те провайдеры/chains, которые тебе не нужны.
+#   3. Заполни ключи в .env (гайд по получению — docs/providers-setup.md).
+#   4. Запусти: uv sync && uv run neurogate
+#
+# Без ключа провайдер автоматически пропускается на старте — можно начать с
+# одного бесплатного ключа (например, Groq) и расширять по необходимости. Если
+# в chain не осталось ни одного работающего провайдера, сервер откажется
+# стартовать и подскажет какие env-vars выставить.
+#
+# Структура: провайдеры определяются один раз в `providers:` (упорядочены по
+# default-цепочке chat, reasoning-only — в конце). Цепочки в `chains:`
+# ссылаются по имени. Клиент выбирает цепочку через поле `model` в запросе:
+#   model: "chat"       → цепочка chat (default, русский приоритет)
+#   model: "chat_fast"  → chat без моделей с latency > 5s (отсечены «долгодумы»)
+#   model: "chat_en"    → английский чат, AA Index v4.0
+#   model: "code"       → reasoning + SWE/LCB composite
+#   model: "latency"    → по медианам Total time (быстрее сверху)
+#   model: "quality"    → AA Intelligence Index v4.0
+#   model: "unlimited"  → провайдеры без RPD-кэпа (для high-volume)
+#   model: "image"      → vision-capable, порядок по точности описаний
+#   model: "reasoning_quality" → thinking-модели по AA Index
+#   model: "reasoning_deep" → thinking-модели по глубине thinking
+#   model: "paid"       → единственная платная (Claude Opus через OpenRouter)
+#   model: "web"        → OpenRouter :online провайдеры с веб-поиском (Exa)
+#   model: "translation" → мультиязычные (Qwen 119 langs, Mistral, Gemma 140 langs)
+#   model: "moa"        → Mixture of Agents: параллельные proposers + aggregator
+#   model: "sc"         → Self-Consistency: N сэмплов от одной модели + aggregator (?samples=N)
+#   model: "deep_search" → Research-агент: plan→search→synthesize→critique (?max_subq=N&rounds=R)
+#   model: "tts"        → Text-to-Speech через /v1/audio/speech (Edge TTS, безлимит)
+#   model: "auto"       → default_chain
+#   любое другое        → default_chain
+#
+# Все model-IDs проверены через /v1/chat/completions (HTTP 200) или в каталоге
+# моделей провайдера на момент срезы конфигурации. Часть моделей быстро
+# протухает — если что-то стало 404, провайдер выпадет из chain автоматически.
+
+providers:
+  # === quality = AA Intelligence Index v4.0 (deepchain1, 16.12.2025) ===
+  # === latency_s = медиана Total time из LATENCY_TEST_v2_default.md (Hetzner FSN1 → upstream, 2026-04-20, max_tokens=600) ===
+  # === ru = RU-Quality 0-100: грамматика + корректность физики + следование инструкции (v2_default/instruct 2026-04-20). Пороги: ≥80 top, ≥60 strong, ≥40 mid, <40 low. ===
+
+  - name: sambanova:deepseek-v3.2
+    kind: sambanova
+    model: DeepSeek-V3.2
+    api_key_env: SAMBANOVA_API_KEY
+    rpd: 20  # per-model bucket (проверено через x-ratelimit-limit-requests-day)
+    quality: 46   # AA Index v4.0 (reasoning)
+    latency_s: 3.448
+    ru: 85        # bench: 17/20 (auto, 1.92s avg)
+
+  - name: mistral:large
+    kind: mistral
+    model: mistral-large-latest
+    api_key_env: MISTRAL_API_KEY
+    rpm: 4  # Experiment plan: хедер x-ratelimit-limit-req-minute=4 (не 60 как в старых доках)
+    # ⚠️ Privacy: opt-out в console.mistral.ai → Admin → Privacy → "Anonymous improvement data" = OFF
+    quality: 23   # AA Index v4.0 (Mistral Large 3)
+    latency_s: 11.884
+    ru: 75        # bench: 15/20 (auto, 1.59s avg)
+
+  - name: nvidia:qwen3.5-397b
+    kind: nvidia
+    model: qwen/qwen3.5-397b-a17b
+    api_key_env: NVIDIA_API_KEY
+    rpm: 40  # NVIDIA NIM: без RPD, только per-model ~40 RPM (хедеры не отдаются)
+    timeout: 240   # медленный NIM endpoint: 2026-04-21 повтор бенча — 219s для 779ch output
+    # 397B MoE с 17B active parameters. SWE-b V 76.4%, сильный multilingual+RU.
+    # Instruct-вариант (не thinking): API не возвращает reasoning_content/<think> — подтверждено 2026-04-21.
+    quality: 40   # AA Index v4.0 (Feb 2026, non-reasoning)
+    latency_s: 71.904
+    ru: 75        # bench: 15/20 (auto, 23.75s avg)
+
+  - name: nvidia:qwen3-coder-480b
+    kind: nvidia
+    model: qwen/qwen3-coder-480b-a35b-instruct
+    api_key_env: NVIDIA_API_KEY
+    rpm: 40
+    timeout: 240
+    # 480B MoE / 35B active, 256k ctx, agentic coding. Identity verified 2026-05-02.
+    quality: 32   # estimate 2026-05-02 (extrap из бенчей Qwen3-Coder)
+    latency_s: 5.0  # estimate
+    ru: 70         # estimate
+
+  - name: nvidia:minimax-m2.7
+    kind: nvidia
+    model: minimaxai/minimax-m2.7
+    api_key_env: NVIDIA_API_KEY
+    rpm: 40
+    timeout: 240
+    quality: 30   # estimate 2026-05-02 (230B coding/reasoning, identity verified)
+    latency_s: 6.0
+    ru: 75        # estimate
+    reasoning: true  # 2026-05-02: reasoning_content=561 при max_tokens=300
+
+  - name: nvidia:step-3.5-flash
+    kind: nvidia
+    model: stepfun-ai/step-3.5-flash
+    api_key_env: NVIDIA_API_KEY
+    rpm: 40
+    timeout: 240
+    quality: 26   # estimate 2026-05-02 (200B MoE reasoning, StepFun)
+    latency_s: 6.0
+    ru: 70        # estimate
+    reasoning: true  # 2026-05-02: reasoning_content=270 при max_tokens=300
+
+  - name: nvidia:seed-oss-36b
+    kind: nvidia
+    model: bytedance/seed-oss-36b-instruct
+    api_key_env: NVIDIA_API_KEY
+    rpm: 40
+    timeout: 240
+    quality: 22   # estimate 2026-05-02 (Doubao/ByteDance, long-context)
+    latency_s: 5.0
+    ru: 65        # estimate
+    reasoning: true  # 2026-05-02: reasoning_content=359 при max_tokens=300
+
+  - name: nvidia:gemma-4-31b-it
+    kind: nvidia
+    model: google/gemma-4-31b-it
+    api_key_env: NVIDIA_API_KEY
+    rpm: 40
+    timeout: 240   # smoke 2026-05-08: cold-start 95s до 200, второй вызов ~быстрее
+    # backup для gemini:gemma-4-31b-it (10rpm/250rpd) — отдельный rate-limit-bucket NVIDIA NIM.
+    # Smoke 2026-05-08: HTTP 200, content="OK", reasoning_tokens=0 (instruct, не thinking).
+    quality: 25    # estimate (extrap из openrouter:gemma-4-31b-free / gemini:gemma-4-31b-it)
+    latency_s: 95.4   # smoke cold-start 2026-05-08; переснять после warmup
+    ru: 78         # estimate (extrap из gemma-4-31b-it)
+
+  - name: sambanova:deepseek-v3.1
+    kind: sambanova
+    model: DeepSeek-V3.1
+    api_key_env: SAMBANOVA_API_KEY
+    rpd: 20
+    quality: 28   # AA Index v4.0 (non-reasoning baseline)
+    latency_s: 3.216
+    ru: 85        # bench: 17/20 (auto, 2.25s avg)
+
+  - name: github:deepseek-v3
+    kind: github
+    model: deepseek/deepseek-v3-0324
+    api_key_env: GITHUB_MODELS_TOKEN
+    rpm: 10
+    rpd: 50
+    quality: 22   # AA Index v4.0 (V3-0324)
+    latency_s: 4.639   # 1/5 OK на default — flaky на длинных ответах, проверить
+    ru: 45        # bench: 9/20 (auto, 0.92s avg)
+
+  - name: openrouter:glm-4.5-air-free
+    kind: openrouter
+    model: z-ai/glm-4.5-air:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000   # shared bucket на все OR :free-модели (доступно при credit ≥ $10)
+    timeout: 180   # reasoning + free route: v2 бенч 98s total
+    quality: 24   # AA Index v4.0 (GLM-4.5-Air reasoning)
+    latency_s: 98.431
+    ru: 70        # bench: 14/20 (auto, 26.57s avg)
+    reasoning: true   # подтверждено 2026-04-21: reasoning_tokens=302, r_content=870ch
+
+  - name: gemini:flash-latest
+    kind: gemini
+    model: gemini-flash-latest
+    api_key_env: GEMINI_API_KEY
+    rpm: 10
+    rpd: 250
+    quality: 46   # AA Index v4.0 (Gemini 3 Flash reasoning)
+    latency_s: 3.582
+    ru: 55        # bench: 11/20 (auto, 8.06s avg)
+    reasoning: true   # подтверждено 2026-04-21: thoughts_token_count=260
+
+  - name: gemini:2.5-flash
+    kind: gemini
+    model: gemini-2.5-flash
+    api_key_env: GEMINI_API_KEY
+    rpm: 10
+    rpd: 250
+    quality: 21   # AA Index v4.0 (non-reasoning в AA, но thinking включён в API)
+    latency_s: 3.529   # 1/5 OK — флapping на квоте, переснять
+    ru: 85        # bench: 17/20 (auto, 1.82s avg)
+    reasoning: true   # подтверждено 2026-04-21: thoughts_token_count=743 (thinking включен по умолчанию)
+
+  - name: gemini:gemma-4-31b-it
+    kind: gemini
+    model: gemma-4-31b-it
+    api_key_env: GEMINI_API_KEY
+    rpm: 10        # консервативно: Google не задокументировал явно для gemma-4-31b в free-tier — переснять при первом 429
+    rpd: 250       # см. выше
+    quality: 25    # estimate 2026-05-02 (extrap из openrouter:gemma-4-31b-free)
+    latency_s: 2.0 # estimate (smoke ok через прямой Gemini API 2026-05-02)
+    ru: 78         # estimate (extrap из openrouter:gemma-4-31b-free)
+
+  - name: github:gpt-4.1-mini
+    kind: github
+    model: openai/gpt-4.1-mini
+    api_key_env: GITHUB_MODELS_TOKEN
+    rpm: 10
+    rpd: 50
+    quality: 23   # AA Index v4.0
+    latency_s: 5.371
+    ru: 95        # bench: 19/20 (auto, 1.72s avg)
+    vision: true  # GPT-4.1-mini принимает image_url
+
+  - name: cerebras:qwen-3-235b
+    kind: cerebras
+    model: qwen-3-235b-a22b-instruct-2507
+    api_key_env: CEREBRAS_API_KEY
+    rpm: 5      # хедер x-ratelimit-limit-requests-minute=5 (не 30)
+    rpd: 14400  # per-model RPD
+    quality: 30   # AA Index v4.0 (reasoning)
+    latency_s: 1.098   # 4/5 OK — 429 под нагрузкой
+    ru: 85        # bench: 17/20 (auto, 0.67s avg)
+
+  - name: github:gpt-4o-mini
+    kind: github
+    model: openai/gpt-4o-mini
+    api_key_env: GITHUB_MODELS_TOKEN
+    rpm: 15
+    rpd: 150
+    quality: 13   # AA Index v4.0
+    latency_s: 3.867
+    ru: 85        # bench: 17/20 (auto, 2.81s avg)
+    vision: true  # GPT-4o-mini multimodal
+
+  - name: sambanova:llama-4-maverick
+    kind: sambanova
+    model: Llama-4-Maverick-17B-128E-Instruct
+    api_key_env: SAMBANOVA_API_KEY
+    rpd: 20
+    quality: 17   # AA Index v4.0 (~)
+    latency_s: 1.641
+    ru: 90        # bench: 18/20 (auto, 1.98s avg)
+    vision: true  # Llama 4 Maverick — native multimodal (vision input)
+
+  - name: sambanova:llama-3.3-70b
+    kind: sambanova
+    model: Meta-Llama-3.3-70B-Instruct
+    api_key_env: SAMBANOVA_API_KEY
+    rpd: 20
+    quality: 15   # AA Index v4.0 (Llama-3.3-70B baseline)
+    latency_s: 4.991
+    ru: 60        # bench: 12/20 (auto, 2.69s avg)
+
+  - name: groq:llama-3.3-70b
+    kind: groq
+    model: llama-3.3-70b-versatile
+    api_key_env: GROQ_API_KEY
+    rpm: 30
+    rpd: 1000
+    quality: 15
+    latency_s: 2.164
+    ru: 65        # bench: 13/20 (auto, 0.94s avg)
+    max_output_tokens: 32768  # Groq cap (ctx=131072)
+
+  - name: nvidia:llama-3.3-70b
+    kind: nvidia
+    model: meta/llama-3.3-70b-instruct
+    api_key_env: NVIDIA_API_KEY
+    rpm: 40
+    quality: 15
+    latency_s: 10.767
+    ru: 60        # bench: 12/20 (auto, 2.56s avg)
+
+  - name: github:llama-3.3-70b
+    kind: github
+    model: meta/llama-3.3-70b-instruct
+    api_key_env: GITHUB_MODELS_TOKEN
+    rpm: 15
+    rpd: 150
+    quality: 15
+    latency_s: 13.025
+    ru: 55        # bench: 11/20 (auto, 2.73s avg)
+
+  - name: cloudflare:llama-3.3-70b-fp8-fast
+    kind: cloudflare
+    model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+    api_key_env: CLOUDFLARE_API_KEY
+    rpd: 300
+    timeout: 120   # FP8 bulk медленный: v2 бенч 18s total
+    quality: 14   # AA Index v4.0 (FP8 penalty)
+    latency_s: 17.941
+    ru: 65        # bench: 13/20 (auto, 1.32s avg)
+
+  - name: groq:gpt-oss-120b
+    kind: groq
+    model: openai/gpt-oss-120b
+    api_key_env: GROQ_API_KEY
+    rpm: 30
+    rpd: 1000
+    quality: 33   # AA Index v4.0 (high)
+    latency_s: 1.335
+    ru: 80        # bench: 16/20 (auto, 1.05s avg)
+    reasoning: true   # подтверждено 2026-04-21: reasoning_tokens=129, r_content=409ch
+    max_output_tokens: 65536  # Groq cap (ctx=131072)
+
+  - name: zai:glm-4.5-flash
+    kind: zai
+    model: glm-4.5-flash
+    api_key_env: ZAI_API_KEY
+    timeout: 180   # v2 бенч 74s total, 33s TTFT — долго думает перед content
+    quality: 20   # AA Index v4.0 (~)
+    latency_s: 74.203
+    ru: 75        # bench: 15/20 (auto, 13.77s avg)
+    reasoning: true   # подтверждено 2026-04-21: reasoning_tokens=437, r_content=1205ch — самый тяжёлый thinker
+
+  - name: groq:qwen3-32b
+    kind: groq
+    model: qwen/qwen3-32b
+    api_key_env: GROQ_API_KEY
+    rpm: 60
+    rpd: 1000
+    quality: 17   # AA Index v4.0 (reasoning)
+    latency_s: 1.304
+    ru: 65        # bench: 13/20 (auto, 2.02s avg)
+    reasoning: true   # подтверждено 2026-04-21: inline <think>-тег в content, 716 tokens на простую задачу
+    max_output_tokens: 40960  # Groq cap < context_window — without this 400 на max_tokens > 40960
+
+  - name: groq:llama-4-scout
+    kind: groq
+    model: meta-llama/llama-4-scout-17b-16e-instruct
+    api_key_env: GROQ_API_KEY
+    rpm: 30
+    rpd: 1000
+    quality: 14   # AA Index v4.0 (small MoE)
+    latency_s: 0.907
+    ru: 80        # bench: 16/20 (auto, 0.65s avg)
+    max_output_tokens: 8192  # Groq cap (ctx=131072) — низкий потолок!
+
+  - name: groq:gpt-oss-20b
+    kind: groq
+    model: openai/gpt-oss-20b
+    api_key_env: GROQ_API_KEY
+    rpm: 30
+    rpd: 1000
+    quality: 25   # AA Index v4.0 (~high reasoning)
+    latency_s: 0.714
+    ru: 75        # bench: 15/20 (auto, 0.94s avg)
+    reasoning: true   # подтверждено 2026-04-21: reasoning_tokens=192, r_content=625ch
+    max_output_tokens: 65536  # Groq cap (ctx=131072)
+
+  - name: gemini:flash-lite-latest
+    kind: gemini
+    model: gemini-flash-lite-latest
+    api_key_env: GEMINI_API_KEY
+    rpm: 15
+    rpd: 1000
+    quality: 34   # AA Index v4.0 (Gemini 3.1 FL)
+    latency_s: 2.612
+    ru: 85        # bench: 17/20 (auto, 0.68s avg)
+
+  - name: gemini:2.5-flash-lite
+    kind: gemini
+    model: gemini-2.5-flash-lite
+    api_key_env: GEMINI_API_KEY
+    rpm: 15
+    rpd: 1000
+    quality: 13   # AA Index v4.0
+    latency_s: 2.626
+    ru: 90        # bench: 18/20 (auto, 1.08s avg)
+
+  - name: groq:llama-3.1-8b-instant
+    kind: groq
+    model: llama-3.1-8b-instant
+    api_key_env: GROQ_API_KEY
+    rpm: 30
+    rpd: 14400
+    quality: 12   # AA Index v4.0
+    latency_s: 0.668
+    ru: 60        # bench: 12/20 (auto, 0.79s avg)
+
+  - name: cerebras:llama3.1-8b
+    kind: cerebras
+    model: llama3.1-8b
+    api_key_env: CEREBRAS_API_KEY
+    rpm: 30
+    rpd: 14400  # per-model RPD
+    quality: 12
+    latency_s: 0.421
+    ru: 65        # bench: 13/20 (auto, 0.65s avg)
+
+  # === OR :free добавлены 2026-04-20 по OR_FREE_SCAN.md ===
+  # Прямые qwen3-next-80b/qwen3-coder/gemma-4-31b через OR :free — 100% 429 (upstream дохлый).
+  # Выбраны живые: gpt-oss-120b-free (3/3, OpenInference backend), gemma-3-27b-free (2/3, Google AI Studio).
+  # Плюс free-router как last-resort — распределяет по живым backend'ам (3/3 в ping, 5/5 в бенче).
+
+  - name: openrouter:gpt-oss-120b-free
+    kind: openrouter
+    model: openai/gpt-oss-120b:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000   # shared bucket на все OR :free
+    timeout: 120
+    quality: 33   # AA Index v4.0 (=groq:gpt-oss-120b), backup через OpenInference
+    latency_s: 5.199
+    ru: 80        # bench: 16/20 (auto, 4.99s avg)
+    reasoning: true   # подтверждено 2026-04-21: reasoning_tokens=18, r_content=72ch (меньше чем groq, но reasoning-модель)
+
+  - name: openrouter:gemma-3-27b-free
+    kind: openrouter
+    model: google/gemma-3-27b-it:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 120
+    tools: false   # Gemma family не имеет нативного function calling
+    quality: 20   # Gemma 3 27B, 140 языков официально Google, приличный RU
+    latency_s: 3.118   # flaky 2/3 OK — под нагрузкой 429
+    ru: 65        # bench: 13/20 (auto, 1.51s avg)
+
+  - name: openrouter:free-router
+    kind: openrouter
+    model: openrouter/free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 180   # high variance: default bench 12-96s
+    tools: false   # auto-роутинг — может уехать на модель без FC, для агентов небезопасно
+    quality: 20   # рулетка: gpt-oss-20b / gemma-3-12b / llama-3.2-3b / ... — берём среднюю
+    latency_s: 20.506
+    ru: 60        # bench: 12/20 (auto, 9.52s avg)
+
+  # === Pollinations (free, no-auth-required legacy API) ===
+  # text.pollinations.ai anonymous tier: только `openai-fast` = GPT-OSS 20B Reasoning (OVH backend).
+  # Та же модель что groq:gpt-oss-20b, но другой хостер → полезно как backup когда Groq 429.
+  # Rate limit: 1 req / 15s = 4 rpm (жёсткий). API ключ не обязателен, но мы шлём наш для consistency
+  # с image-провайдером; tier всё равно anonymous (upgrade требует enter.pollinations.ai).
+  # Бенч 2026-04-22: ~4s на RU-ответ с max_tokens=800. Reasoning-heavy → короткий max_tokens съедается
+  # на thinking; ставим ru=33 (как у groq:gpt-oss-20b — та же модель).
+
+  - name: pollinations:gpt-oss-20b
+    kind: pollinations
+    model: openai-fast
+    api_key_env: POLLINATIONS_API_KEY
+    rpm: 4        # 1 req / 15s anonymous
+    rpd: 1000     # консервативный soft-cap (теоретически 4 × 60 × 24 = 5760)
+    timeout: 120  # reasoning может думать долго
+    quality: 25   # AA Index v4.0 (~ groq:gpt-oss-20b, та же GPT-OSS 20B)
+    latency_s: 4.0   # измерено 2026-04-22, unique RU prompt, max_tokens=800
+    ru: 75        # bench: 15/20 (auto, 24.24s avg)
+    reasoning: true   # GPT-OSS 20B Reasoning LLM per Pollinations каталога
+
+  # === OR :free добавлены 2026-04-22 (audit verify) — 3 из 9 заявленных прошли live-probe ===
+  # 429/dead upstream: nousresearch/hermes-3-llama-3.1-405b:free (Venice),
+  #   qwen/qwen3-next-80b-a3b-instruct:free (Venice), qwen/qwen3-coder:free (Venice),
+  #   google/gemma-3-27b-it:free (бенч 0/3 на 2026-04-25, флапает), google/gemma-4-31b-it:free.
+  # Частично живые (2/3 в бенче 2026-04-25, не добавлены — нестабильные):
+  #   google/gemma-4-26b-a4b-it:free (Google AI Studio backend),
+  #   google/gemma-3-12b-it:free (Google AI Studio backend).
+  # Skipped: google/lyria-3-pro-preview (audio-output, не chat), liquid/lfm-2.5-1.2b-thinking:free
+  #   (content=null + каша в RU: "правильное пересказ", "откреплено" — модель 1.2B слишком тонкая).
+  # Seltz AI — на деле $100 trial credits, не бесплатный tier. AgentSearch (brcrusoe72) — self-hosted
+  #   (localhost:3939), публичного endpoint нет. Обе ложные заявки аудитора, не добавлены.
+
+  - name: openrouter:minimax-m2.5-free
+    kind: openrouter
+    model: minimax/minimax-m2.5:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    context_window: 196608
+    timeout: 120   # reasoning + free route: первый cold-call 32s, затем 5-10s
+    quality: 35   # консервативная оценка: MiniMax M2 family ~ Qwen3-235B уровня, reasoning модель
+    latency_s: 9.52   # median(32.52, 9.52, 5.13) 2026-04-22, RU-prompt, max_tokens=800
+    ru: 90        # bench: 18/20 (auto, 40.43s avg)
+    reasoning: true   # 2026-04-22: reasoning_tokens=290-465 (OpenInference backend)
+
+  # arcee-ai/trinity-large-preview:free — снят с OpenRouter 2026-04-25 (3/3 HTTP 404
+  # "No endpoints found"). Был добавлен 2026-04-22 как RU 75 backup; убран из chain'ов.
+
+  - name: openrouter:ling-flash-free
+    kind: openrouter
+    model: inclusionai/ling-2.6-flash:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    context_window: 262144
+    timeout: 60
+    tools: false   # InclusionAI Ling — без нативного function calling
+    quality: 18   # консервативная оценка, speed-oriented InclusionAI (Ant Group), 262k ctx
+    latency_s: 1.24   # median(1.24, 2.34, 1.17) 2026-04-22
+    ru: 65        # bench: 13/20 (auto, 1.28s avg)
+
+  # InclusionAI Ling 2.6 1T — flagship 1-триллион-параметрической MoE модели от Ant Group.
+  # Бенч 2026-04-25: 3/3 OK на Hetzner, ttft median 855ms, total 2.6s — winner OR_FREE_SCAN.
+  # Backend: Novita raw (не OpenInference), модель тег `ling-2.6-1t-20260423`.
+  # RU: чистый литературный текст, корректная физика Рэлея, без утечек иероглифов/английского
+  # (контраст с ling-flash, который роняет «较短波长» и «violet» в RU). 262k ctx.
+  # AA Index v4.0 отсутствует — оценка консервативная (1T-MoE ≈ DeepSeek V3 уровня).
+  - name: openrouter:ling-1t-free
+    kind: openrouter
+    model: inclusionai/ling-2.6-1t:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    context_window: 262144
+    timeout: 60
+    tools: false   # InclusionAI Ling — без нативного function calling
+    quality: 30   # консервативно: 1T MoE flagship, без AA v4.0; в бенче выше gpt-oss-120b
+    latency_s: 2.63   # median(2576, 2631, 3080) ms = 2.63s 2026-04-25
+    ru: 82   # 3/3 чистый литературный RU, корректная физика, без утечек языка
+
+  # === Reasoning-only (не участвуют в chat chain) ===
+
+  - name: openrouter:nemotron-3-super-free
+    kind: openrouter
+    model: nvidia/nemotron-3-super-120b-a12b:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000   # shared bucket на все OR :free-модели (credit ≥ $10)
+    timeout: 120   # reasoning thinking: v2 бенч 20s total, весь в TTFT
+    quality: 35   # AA Index v4.0 (Nemotron 3 Super reasoning)
+    latency_s: 19.842
+    ru: 50   # местами английские слова в RU-тексте («иtiny частицы»), но instruct чистый
+    reasoning: true   # подтверждено 2026-04-21: reasoning_tokens=58, r_content=220ch
+
+  - name: nvidia:nemotron-llama-49b
+    kind: nvidia
+    model: nvidia/llama-3.3-nemotron-super-49b-v1
+    api_key_env: NVIDIA_API_KEY
+    rpm: 40
+    timeout: 120   # bulk медленный: v2 бенч 27s total
+    quality: 15   # AA Index v4.0 (NAS-pruned 70B equivalent)
+    latency_s: 27.105
+    ru: 18   # «Рассеивание Рэя» вместо Рэлея, «水япар», утечка иероглифа «几乎» в RU
+
+  # openrouter/elephant-alpha — снят с OpenRouter 2026-04-25 (20/20 HTTP 404
+  # "Elephant Alpha was a stealth preview..."). Удалён из чейнов code/chat_en/quality/moa.
+
+  # === Added 2026-04-26 — NEW free-tier models (smoke-tested, метрики после бенча) ===
+  # Добавлены ТОЛЬКО в providers: (вне чейнов) согласно auto-audit-and-add-models.md.
+  # Включение в chains: chat / chat_fast / quality / etc — после ручного review бенчей.
+
+  # nvidia:deepseek-v4-pro — выпилена 2026-04-28: 0/6 OK на NIM free-tier (502/timeout).
+  # Если NIM откроет flagship-модели для free → пересмотреть.
+  # nvidia:gemma-4-31b-it — выпилена 2026-04-28: 1/3 OK (67s + 2 timeouts), NIM flaky.
+
+  # Tencent Hunyuan 3 (Hy3-Preview) — 295B MoE, 21B active, 256K ctx.
+  # OpenRouter free до 8 мая 2026 (limited-time window). Reasoning model.
+  # Bench 2026-04-27: 3/3 OK при max_tokens=3000, медиана 19.4s, content 2234ch.
+  # При max_tokens=600 reasoning сжирает весь бюджет — content пустой.
+  - name: openrouter:hy3-preview:free
+    kind: openrouter
+    model: tencent/hy3-preview:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    context_window: 262144
+    timeout: 120
+    quality: 35     # консервативно: 295B MoE reasoning ~ Qwen3-235B уровня
+    latency_s: 19.4 # 2026-04-27: median(19.4, 17.6, 20.9) на max_tokens=3000
+    ru: 0           # TODO: bench отдельно (стандартный ru_bench max_tokens=800 мало)
+    reasoning: true # подтверждено 2026-04-27: reasoning_content 1237-1558ch
+
+  # Mistral Small 4 — 16.03.2026, hybrid (instruct+reasoning+vision+code).
+  # 256K ctx, 6B active params, configurable reasoning_effort.
+  # ⚠️ Privacy: opt-out на console.mistral.ai (как у mistral:large).
+  # Bench 2026-04-27: latency 5.2s, RU 16/20 = 80 (clean run, без 429).
+  - name: mistral:mistral-small-2603
+    kind: mistral
+    model: mistral-small-2603
+    api_key_env: MISTRAL_API_KEY
+    rpm: 4          # Mistral free-tier стандарт
+    quality: 25     # консервативно: ~ Mistral Small 3 + reasoning
+    latency_s: 5.165
+    ru: 80          # bench: 16/20 (auto, ru_bench 2026-04-27)
+
+  # Gemini 3 Flash Preview — frontier Flash (не Lite). Reasoning по умолчанию.
+  # Bench 2026-04-27: latency 4.8s (короткий ответ ~138ch на физ-промпт),
+  # RU 12/20 = 60 (5 промптов выпали в 503 — реально может быть выше).
+  - name: gemini:3-flash-preview
+    kind: gemini
+    model: gemini-3-flash-preview
+    api_key_env: GEMINI_API_KEY
+    rpm: 10
+    rpd: 250
+    timeout: 120
+    quality: 40     # AA Index v4.0 (Gemini 3 Flash) ~ ровень flash-latest
+    latency_s: 4.828
+    ru: 60          # bench: 12/20 (5 errors из-за 503, повторить)
+    reasoning: true # 2026-04-27 smoke: внутр. thinking (32 tok used vs 1 output)
+
+  # Gemini 3.1 Flash-Lite Preview — самая дешёвая Flash-Lite, без reasoning.
+  # Bench 2026-04-27: latency 9.5s (2/3 OK, 1× 503), RU 8/20 = 40 (12 errors 503
+  # — НЕ доверять, повторить когда server load спадёт). Метрики предварительные.
+  - name: gemini:3.1-flash-lite-preview
+    kind: gemini
+    model: gemini-3.1-flash-lite-preview
+    api_key_env: GEMINI_API_KEY
+    rpm: 15
+    rpd: 1000
+    quality: 18     # AA Index v4.0 (Lite tier)
+    latency_s: 9.52 # 2026-04-27: 2/3 OK, 1× 503 — flaky
+    ru: 0           # 12/20 errors 503 — TODO: rebench
+
+  # SambaNova Gemma 3 12B IT — на LPU (быстрый).
+  # Bench 2026-04-27: latency 3.5s clean. RU bench съел quota (rpd=20),
+  # все 20 промптов получили 429 — TODO rebench завтра.
+  - name: sambanova:gemma-3-12b-it
+    kind: sambanova
+    model: gemma-3-12b-it
+    api_key_env: SAMBANOVA_API_KEY
+    rpd: 20
+    quality: 14     # AA Index v4.0 (Gemma 3 12B baseline)
+    latency_s: 3.523
+    ru: 0           # quota 429 — TODO: rebench когда rpd обнулится
+
+  # === Added 2026-04-28 — NEW free-tier models (smoke-test 200 OK, метрики после бенча) ===
+  # Добавлены ТОЛЬКО в providers: (вне чейнов). Источник: live-probe против /v1/models +
+  # /chat/completions у каждого вендора (audit reports от 2026-04-27/28 проверены вручную).
+  # Включение в chains — после ручного review бенчей (см. docs/features/auto-audit-and-add-models.md).
+
+  # --- OpenRouter :free (5 шт, smoke 2026-04-28: все 200) ---
+
+  # bench_latency 2026-04-29 (5 ранов default): 3/5 OK, 2× ReadTimeout/empty.
+  # OK-раны имеют огромный TTFT (8-47s) — модель медленно стартует на free OR.
+  - name: openrouter:nemotron-nano-9b-v2:free
+    kind: openrouter
+    model: nvidia/nemotron-nano-9b-v2:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 120
+    quality: 0      # TODO: ru_bench
+    latency_s: 18.4 # 2026-04-29: median total (3/5 OK)
+    ru: 0
+
+  # bench 2026-04-29: 4/5 OK, mediana 21.7s — vision-language, медленный TTFT.
+  - name: openrouter:nemotron-nano-12b-vl:free
+    kind: openrouter
+    model: nvidia/nemotron-nano-12b-v2-vl:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 120
+    quality: 0      # TODO: ru_bench (vision-language)
+    latency_s: 21.8
+    ru: 0
+
+  # bench 2026-04-29: 5/5 OK, median 4.2s, RU-вывод связный (Poolside coding-focused).
+  - name: openrouter:laguna-xs.2:free
+    kind: openrouter
+    model: poolside/laguna-xs.2:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 60
+    quality: 0      # TODO: ru_bench
+    latency_s: 4.24
+    ru: 65          # ru_bench 2026-04-29: 13/20
+
+  # bench 2026-04-29: 4/5 OK (1× 429), median 2.8s. OCR-specialized — не chat.
+  - name: openrouter:qianfan-ocr-fast:free
+    kind: openrouter
+    model: baidu/qianfan-ocr-fast:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 60
+    quality: 0      # OCR-specialized, chat-bench не релевантен
+    latency_s: 2.8
+    ru: 0
+
+  # bench 2026-04-29: 5/5 OK, median 2.2s — самый быстрый из новых. 1.2B tiny;
+  # RU-связность слабая ("свет заказа", "оболочке частицы вода") — только в fast-paths.
+  - name: openrouter:lfm-2.5-1.2b:free
+    kind: openrouter
+    model: liquid/lfm-2.5-1.2b-instruct:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 60
+    quality: 0      # 1.2B tiny — низкий floor
+    latency_s: 2.23
+    ru: 15          # ru_bench 2026-04-29: 3/20 — RU сломан, не для chains
+
+  # --- OpenRouter free additions 2026-05-02 (sync с openrouter.ai/api/v1/models) ---
+  # ⚠️ Все :free делят ОДИН аккаунтный бакет (20 RPM / 1000 RPD при credit≥$10).
+  # rpm/rpd на каждой записи — это же значение бакета, а не доп. квота.
+  # quality/latency/ru = 0 → TODO: smoke + ru_bench.
+
+  - name: openrouter:dolphin-venice-24b:free
+    kind: openrouter
+    model: cognitivecomputations/dolphin-mistral-24b-venice-edition:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 120
+    quality: 12      # estimate 2026-05-02 (extrap; 2026-05-02 429 persistent)
+    latency_s: 5.0
+    ru: 45           # estimate 2026-05-02
+
+  - name: openrouter:gemma-3-12b-free
+    kind: openrouter
+    model: google/gemma-3-12b-it:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 60
+    quality: 13      # estimate 2026-05-02 (smoke 2026-05-02)
+    latency_s: 2.1
+    ru: 70           # estimate 2026-05-02
+
+  - name: openrouter:gemma-3-4b-free
+    kind: openrouter
+    model: google/gemma-3-4b-it:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 60
+    quality: 7      # estimate 2026-05-02 (smoke 2026-05-02)
+    latency_s: 2.2
+    ru: 65           # estimate 2026-05-02
+
+  - name: openrouter:gemma-3n-e2b-free
+    kind: openrouter
+    model: google/gemma-3n-e2b-it:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 60
+    quality: 4      # estimate 2026-05-02 (smoke 2026-05-02 (только эмодзи))
+    latency_s: 1.4
+    ru: 50           # estimate 2026-05-02
+
+  - name: openrouter:gemma-3n-e4b-free
+    kind: openrouter
+    model: google/gemma-3n-e4b-it:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 60
+    quality: 6      # estimate 2026-05-02 (smoke 2026-05-02)
+    latency_s: 1.5
+    ru: 55           # estimate 2026-05-02
+
+  - name: openrouter:gemma-4-26b-free
+    kind: openrouter
+    model: google/gemma-4-26b-a4b-it:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 120
+    quality: 22      # estimate 2026-05-02 (extrap NEW Gemma 4 MoE; 2026-05-02 429 flaky)
+    latency_s: 3.0
+    ru: 75           # estimate 2026-05-02
+
+  - name: openrouter:gemma-4-31b-free
+    kind: openrouter
+    model: google/gemma-4-31b-it:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 120
+    quality: 25      # estimate 2026-05-02 (smoke 2026-05-02; NEW Gemma 4 dense)
+    latency_s: 1.7
+    ru: 78           # estimate 2026-05-02
+
+  - name: openrouter:lfm-2.5-thinking:free
+    kind: openrouter
+    model: liquid/lfm-2.5-1.2b-thinking:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 120
+    quality: 5      # estimate 2026-05-02 (smoke 2026-05-02; tiny 1.2B reasoning)
+    latency_s: 1.7
+    ru: 30           # estimate 2026-05-02
+    reasoning: true
+
+  - name: openrouter:llama-3.2-3b-free
+    kind: openrouter
+    model: meta-llama/llama-3.2-3b-instruct:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 60
+    quality: 8      # estimate 2026-05-02 (extrap; 2026-05-02 429)
+    latency_s: 2.0
+    ru: 45           # estimate 2026-05-02
+
+  - name: openrouter:llama-3.3-70b-free
+    kind: openrouter
+    model: meta-llama/llama-3.3-70b-instruct:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 120
+    quality: 15      # estimate 2026-05-02 (extrap (как groq/sambanova); 2026-05-02 429)
+    latency_s: 5.0
+    ru: 60           # estimate 2026-05-02
+
+  - name: openrouter:hermes-3-405b-free
+    kind: openrouter
+    model: nousresearch/hermes-3-llama-3.1-405b:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 240   # 405B fine-tune Llama-3.1, ожидаем медленный TTFT
+    quality: 22      # estimate 2026-05-02 (extrap Llama-3.1-405B FT; 2026-05-02 429, EN-tilt)
+    latency_s: 30.0
+    ru: 60           # estimate 2026-05-02
+
+  - name: openrouter:nemotron-3-nano-30b-free
+    kind: openrouter
+    model: nvidia/nemotron-3-nano-30b-a3b:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 180
+    quality: 18      # estimate 2026-05-02 (smoke 2026-05-02; reasoning)
+    latency_s: 4.0
+    ru: 70           # estimate 2026-05-02
+    reasoning: true   # smoke 2026-05-02: 607 reasoning_tokens, content=None при max_tokens=200
+
+  - name: openrouter:nemotron-3-nano-omni-r-free
+    kind: openrouter
+    model: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 180
+    quality: 18      # estimate 2026-05-02 (smoke 2026-05-02; reasoning + multimodal)
+    latency_s: 3.1
+    ru: 70           # estimate 2026-05-02
+    reasoning: true
+
+  - name: openrouter:gpt-oss-20b-free
+    kind: openrouter
+    model: openai/gpt-oss-20b:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 120
+    quality: 11      # estimate 2026-05-02 (smoke 2026-05-02; same model groq:gpt-oss-20b)
+    latency_s: 1.8
+    ru: 65           # estimate 2026-05-02
+    reasoning: true
+
+  - name: openrouter:laguna-m.1:free
+    kind: openrouter
+    model: poolside/laguna-m.1:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 60
+    quality: 14      # estimate 2026-05-02 (smoke 2026-05-02; Poolside coder)
+    latency_s: 2.1
+    ru: 65           # estimate 2026-05-02
+
+  - name: openrouter:qwen3-coder-free
+    kind: openrouter
+    model: qwen/qwen3-coder:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 120
+    quality: 19      # estimate 2026-05-02 (extrap Qwen3 coder; 2026-05-02 429)
+    latency_s: 5.0
+    ru: 55           # estimate 2026-05-02
+
+  - name: openrouter:qwen3-next-80b-free
+    kind: openrouter
+    model: qwen/qwen3-next-80b-a3b-instruct:free
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 20
+    rpd: 1000
+    timeout: 180
+    quality: 24      # estimate 2026-05-02 (extrap Qwen3 Next 80B/3B MoE; 2026-05-02 429)
+    latency_s: 5.0
+    ru: 75           # estimate 2026-05-02
+
+  # --- GitHub Models (5 шт, smoke 2026-04-28: все 200) ---
+  # gpt-5* НЕ добавлены: project blocklist (paid_models_blocklist.yaml) + memory feedback
+  # «paid models require explicit consent».
+
+  # bench 2026-04-29: 5/5 OK, median 5.9s, RU чистый.
+  - name: github:gpt-4.1
+    kind: github
+    model: openai/gpt-4.1
+    api_key_env: GITHUB_MODELS_TOKEN
+    rpm: 10
+    rpd: 50
+    quality: 0      # TODO: AA Index v4.0 lookup
+    latency_s: 5.92
+    ru: 90          # ru_bench 2026-04-29: 18/20 — лучший в наборе
+    vision: true    # GPT-4.1 multimodal
+
+  # bench 2026-04-29: 5/5 OK, median 13.0s. content стабилен.
+  - name: github:grok-3
+    kind: github
+    model: xai/grok-3
+    api_key_env: GITHUB_MODELS_TOKEN
+    rpm: 10
+    rpd: 50
+    timeout: 120
+    quality: 0      # TODO: AA Index v4.0 lookup
+    latency_s: 12.95
+    ru: 0           # ru_bench 2026-04-29: 6/20 (13× HTTP 429 anti-scrape) — не валидно, перебенчить
+
+  # bench 2026-04-29: 1/5 — content почти всегда пустой (4/5 0 chars), всё уходит в reasoning.
+  # ⚠️ НЕ включать в chains до выяснения формата ответа.
+  - name: github:grok-3-mini
+    kind: github
+    model: xai/grok-3-mini
+    api_key_env: GITHUB_MODELS_TOKEN
+    rpm: 10
+    rpd: 50
+    timeout: 60
+    quality: 0      # broken: 4/5 ранов 0 chars content
+    latency_s: 0    # broken — 6.04s измерено только по успешным ранам, не репрезентативно
+    ru: 0
+    reasoning: true # подтверждено: пустой content, ответ только в reasoning_content
+
+  # bench 2026-04-29: 3/5 OK, 2× HTTP 429 (GitHub anti-scrape rate-limit).
+  - name: github:deepseek-r1
+    kind: github
+    model: deepseek/deepseek-r1
+    api_key_env: GITHUB_MODELS_TOKEN
+    rpm: 10
+    rpd: 50
+    timeout: 120
+    quality: 0      # TODO: ru_bench
+    latency_s: 7.8
+    ru: 0
+    reasoning: true
+
+  # bench 2026-04-29: 3/5 OK, 2× 429. Более новая ревизия R1.
+  - name: github:deepseek-r1-0528
+    kind: github
+    model: deepseek/deepseek-r1-0528
+    api_key_env: GITHUB_MODELS_TOKEN
+    rpm: 10
+    rpd: 50
+    timeout: 120
+    quality: 0      # TODO: ru_bench
+    latency_s: 8.2
+    ru: 0
+    reasoning: true
+
+  # --- Mistral free (5 шт, smoke 2026-04-28: все 200) ---
+  # ⚠️ Privacy: opt-out на console.mistral.ai
+
+  # bench 2026-04-29: 4/5 OK, 1× ReadTimeout 120s.
+  - name: mistral:large-2512
+    kind: mistral
+    model: mistral-large-2512
+    api_key_env: MISTRAL_API_KEY
+    rpm: 4
+    timeout: 120
+    quality: 0      # TODO: AA Index v4.0 lookup
+    latency_s: 12.84
+    ru: 75          # ru_bench 2026-04-29: 15/20
+
+  # bench 2026-04-29: 2/5 OK, очень flaky — 3 раза content пустой, 1× ReadTimeout.
+  # Возможно та же проблема reasoning vs content что у grok-3-mini.
+  # ⚠️ НЕ включать в chains до выяснения.
+  - name: mistral:magistral-medium
+    kind: mistral
+    model: magistral-medium-latest
+    api_key_env: MISTRAL_API_KEY
+    rpm: 4
+    timeout: 120
+    quality: 0      # broken: 3/5 ранов 0 chars content
+    latency_s: 0    # broken — 18.7s измерено только по успешным ранам, не репрезентативно
+    ru: 0
+    reasoning: true
+
+  # bench 2026-04-29: 5/5 OK, median 5.6s, RU стабильный.
+  - name: mistral:magistral-small
+    kind: mistral
+    model: magistral-small-latest
+    api_key_env: MISTRAL_API_KEY
+    rpm: 4
+    timeout: 120
+    quality: 0      # TODO: AA Index v4.0 lookup
+    latency_s: 5.6
+    ru: 70          # ru_bench 2026-04-29: 14/20 (reasoning small)
+    reasoning: true
+
+  # bench 2026-04-29: 5/5 OK, median 15.5s — coding-focused, RU отвечает.
+  - name: mistral:devstral-2512
+    kind: mistral
+    model: devstral-2512
+    api_key_env: MISTRAL_API_KEY
+    rpm: 4
+    timeout: 60
+    quality: 0      # TODO: AA Index v4.0 lookup (coding-focused)
+    latency_s: 15.5
+    ru: 80          # ru_bench 2026-04-29: 16/20 — coding-focused, RU сильный
+
+  # bench 2026-04-29: 5/5 OK, median 4.8s — самый быстрый flagship-Mistral в наборе.
+  - name: mistral:ministral-14b
+    kind: mistral
+    model: ministral-14b-latest
+    api_key_env: MISTRAL_API_KEY
+    rpm: 4
+    quality: 0      # TODO: AA Index v4.0 lookup
+    latency_s: 4.84
+    ru: 85          # ru_bench 2026-04-29: 17/20 — отличный compact-вариант
+
+  # smoke 2026-05-08: HTTP 200, content="Got it! How can I help you", finish=length.
+  # Mid-tier между ministral-14b и large-2512; latest-алиас на актуальный чекпоинт.
+  - name: mistral:medium-latest
+    kind: mistral
+    model: mistral-medium-latest
+    api_key_env: MISTRAL_API_KEY
+    rpm: 4
+    timeout: 60
+    quality: 0      # TODO: bench
+    latency_s: 0    # TODO: bench
+    ru: 0           # TODO: ru_bench
+
+  # --- NVIDIA NIM new (2 шт, smoke 2026-04-28: 200) ---
+
+  # bench 2026-04-29: 3/5 OK, 1× ReadTimeout, 1× ConnectError. Median 87.8s — очень медленно.
+  # ⚠️ Не включать в interactive chains, только bulk/quality с большим timeout.
+  - name: nvidia:mistral-large-3-675b
+    kind: nvidia
+    model: mistralai/mistral-large-3-675b-instruct-2512
+    api_key_env: NVIDIA_API_KEY
+    rpm: 40
+    timeout: 240
+    quality: 0      # TODO: ru_bench (675B — самая крупная Mistral)
+    latency_s: 87.8
+    ru: 0
+
+  # bench 2026-04-29: 5/5 OK, median 8.0s — стабильно для 119B.
+  - name: nvidia:mistral-small-4-119b
+    kind: nvidia
+    model: mistralai/mistral-small-4-119b-2603
+    api_key_env: NVIDIA_API_KEY
+    rpm: 40
+    timeout: 120
+    quality: 0      # TODO: AA Index v4.0 lookup
+    latency_s: 7.97
+    ru: 85          # ru_bench 2026-04-29: 17/20
+
+
+  # === Audio / STT (transcription-only, только для цепочки `audio`) ===
+  # Whisper на Groq — OpenAI-compat /audio/transcriptions. Бесплатный tier.
+  # Бенч 2026-04-21 (test_ru.mp3, Milena TTS, 7.26s): оба Whisper ~0.6s,
+  # Gemini multimodal ~3.4s. rpd — консервативная оценка (free tier Whisper
+  # TPM-based, не RPD; ставим 2000 как soft-кап).
+  - name: groq:whisper-large-v3-turbo
+    kind: groq_whisper
+    model: whisper-large-v3-turbo
+    api_key_env: GROQ_API_KEY
+    rpd: 2000
+    latency_s: 0.62
+    ru: 95   # эталонный RU, Whisper v3 turbo
+
+  - name: groq:whisper-large-v3
+    kind: groq_whisper
+    model: whisper-large-v3
+    api_key_env: GROQ_API_KEY
+    rpd: 2000
+    latency_s: 0.56
+    ru: 98   # full large-v3, чуть точнее turbo
+
+
+  # === TTS (text→speech, только для цепочки `tts`) ===
+  # Microsoft Edge TTS — неофициальный клиент (пакет edge-tts, rany2). WebSocket
+  # к speech.platform.bing.com, без API-ключа, безлимитно. 400+ голосов,
+  # включая русские: ru-RU-DmitryNeural (М), ru-RU-SvetlanaNeural (Ж),
+  # ru-RU-DariyaNeural (Ж). Формат — только mp3 (audio/mpeg) on-wire.
+  # Voice override через поле `voice` в запросе; default задаётся здесь.
+  - name: edge:tts
+    kind: edge_tts
+    model: edge-tts
+    default_voice: ru-RU-DmitryNeural   # можно переопределить в запросе
+    timeout: 60
+    latency_s: 1.5   # оценка: первый аудио-чанк обычно 1-2s, зависит от длины
+    ru: 85   # Neural-TTS Azure-класса; естественный RU
+
+
+  # === SFX / Ambient (text→audio, только для цепочки `sfx`) ===
+  # Бесплатно через публичный HuggingFace Space (gradio_client). НЕ использует
+  # HF Inference API quota ($0.10/мес), но Space крутится на HF Zero-GPU →
+  # анонимная per-IP квота ~3-5 минут GPU/день, каждый вызов резервирует ~120с.
+  # На практике без токена помещается 1-2 вызова в сутки. С HF_TOKEN (free)
+  # квота per-account и чуть выше; с HF PRO ($9/мес) — 25× квоты.
+  # Раньше в цепочке были также haoheliu/audioldm2-text2audio-text2music и
+  # declare-lab/tango2 — оба сейчас в HF 503 (RUNTIME_ERROR / CONFIG_ERROR на
+  # стороне авторов Space). Можно вернуть, когда починятся.
+  - name: hfspace:stable-audio-open
+    kind: hf_space_audio
+    space_id: artificialguybr/Stable-Audio-Open-Zero
+    api_name: /predict
+    prompt_field: prompt
+    duration_field: seconds_total
+    default_duration_s: 10
+    api_key_env: HF_TOKEN
+    timeout: 180
+    quality: 70
+    latency_s: 35
+    ru: 50
+
+
+  # === Image generation (text→image, sync, только для цепочки `image_gen`) ===
+  # Pollinations — GET /prompt/{prompt} возвращает image/jpeg напрямую.
+  # Провайдер оборачивает байты в OpenAI-compat {data:[{b64_json}|{url}]}.
+  # Ключ передаётся как token=... (не Bearer header). Referer обязателен для
+  # распознавания тира выше anonymous.
+  # Tier / interval (APIDOCS.md, 2026-04-22):
+  #   - anonymous: 1 req / 15s (4 rpm)
+  #   - seed (registered, free с токеном): 1 req / 5s (12 rpm)   ← мы здесь
+  #   - flower (paid): 1 req / 3s · nectar (enterprise): без лимитов
+  # Поэтому n>1 НЕ стреляем параллельно (сервер сразу даст 429 на 3 из 4).
+  # Провайдер сериализует seeds с интервалом min_interval_s и делает 1 retry
+  # после 429 с бэкоффом. Rpm в 8 оставляем запасом под 12 rpm кэп seed-tier.
+  - name: pollinations:sana
+    kind: pollinations_image
+    model: sana
+    api_key_env: POLLINATIONS_API_KEY
+    referer: neurogate
+    rpm: 8           # seed tier = 12 rpm кэп, оставляем запас на burst
+    min_interval_s: 5.0   # seed tier = 1 req / 5s (сериализация n>1 + backoff на 429)
+    timeout: 90      # sana 512×512 ~1s, но при 429+retry нужен запас
+    latency_s: 1.0   # измерено ~1s на 512x512 sana
+
+  - name: pollinations:flux
+    kind: pollinations_image
+    model: flux
+    api_key_env: POLLINATIONS_API_KEY
+    referer: neurogate
+    rpm: 8
+    min_interval_s: 5.0
+    timeout: 150     # измеренная generation latency на seed tier ~90s (очередь)
+    latency_s: 90.0  # по бенчу 2026-04-22 — cached prompts <1s, uncached ~90s
+    quality: 70
+
+  - name: pollinations:turbo
+    kind: pollinations_image
+    model: turbo
+    api_key_env: POLLINATIONS_API_KEY
+    referer: neurogate
+    rpm: 8
+    min_interval_s: 5.0
+    timeout: 150     # тот же queue pattern, что и flux на seed tier
+    latency_s: 90.0
+    quality: 55
+
+  # NB: pollinations:kontext (FLUX.1 Kontext, image edit) требует enter.pollinations.ai
+  # tier — на seed выдаёт HTTP 500 "only available on enter.pollinations.ai". Не добавляем.
+
+  # === Gemini 2.5 Flash Image (Nano Banana) — generation + edit ===
+  # Статус 2026-04-25: ОФИЦИАЛЬНО paid-only — это политика, не временный outage.
+  # ai.google.dev/gemini-api/docs/pricing для всех image-моделей
+  # (gemini-2.5-flash-image, gemini-3-pro-image-preview, gemini-3.1-flash-image-preview)
+  # явно указывает «Free Tier: Not available». API возвращает 429 с
+  # «limit: 0» на free_tier_input_token_count. БЕЗ billing работать не будет.
+  # Провайдер оставлен только на случай включения billing на этом проекте.
+  - name: gemini:nano-banana
+    kind: gemini_image
+    model: gemini-2.5-flash-image
+    api_key_env: GEMINI_API_KEY
+    timeout: 120
+    rpm: 10
+    rpd: 500
+    latency_s: 4.0
+    quality: 72
+
+  # === Cloudflare Workers AI — FLUX-1 schnell ===
+  # Permanent free: 10 000 Neurons/день (~20-50 картинок/день при 1024×1024).
+  # НЕ OpenAI-compat: CloudflareImageProvider кастомно дёргает /ai/run/{model}.
+  # ВАЖНО: 10 000 neurons/день — общий пул на ВЕСЬ CF-аккаунт. Добавление
+  # новых cloudflare_image моделей не расширяет дневной потолок, только даёт
+  # выбор по style/quality. Когда квота выжжена — все CF-провайдеры возвращают
+  # 429 одновременно; нужен другой провайдер (HuggingFace, Pollinations, и т.д.).
+  - name: cloudflare:flux-1-schnell
+    kind: cloudflare_image
+    model: "@cf/black-forest-labs/flux-1-schnell"
+    api_key_env: CLOUDFLARE_API_KEY
+    # account_id берётся из CLOUDFLARE_ACCOUNT_ID автоматически
+    steps: 4         # schnell native step count
+    timeout: 90
+    latency_s: 1.1   # измерено @512×512 бенч 2026-04-22
+    quality: 68
+
+  # NB: @cf/black-forest-labs/flux-2-klein-{4b,9b} и flux-2-dev — НЕ text-to-image,
+  # требуют multipart form data с input_image_0..3 (это image edit endpoint).
+  # Не добавляем без отдельного провайдера/endpoint /v1/images/edits.
+
+  - name: cloudflare:dreamshaper
+    kind: cloudflare_image
+    model: "@cf/lykon/dreamshaper-8-lcm"
+    api_key_env: CLOUDFLARE_API_KEY
+    timeout: 90
+    latency_s: 1.5
+    quality: 60
+
+  - name: cloudflare:sdxl-lightning
+    kind: cloudflare_image
+    model: "@cf/bytedance/stable-diffusion-xl-lightning"
+    api_key_env: CLOUDFLARE_API_KEY
+    timeout: 90
+    latency_s: 2.0
+    quality: 62
+
+  - name: cloudflare:phoenix
+    kind: cloudflare_image
+    model: "@cf/leonardo/phoenix-1.0"
+    api_key_env: CLOUDFLARE_API_KEY
+    timeout: 90
+    latency_s: 3.0
+    quality: 65
+
+  # === AI Horde (бывший Stable Horde) — community-distributed inference ===
+  # Полностью бесплатно, БЕЗ РЕГИСТРАЦИИ. apikey="0000000000" — anonymous,
+  # low priority в общей очереди. Async (job + poll), median wait ~30s-2min.
+  # Совершенно отдельный пул квот от CF/Pollinations — спасает когда те 429.
+  # Models: список через https://aihorde.net/api/v2/status/models
+  - name: aihorde:flux-schnell
+    kind: aihorde
+    model: "Flux.1-Schnell fp8 (Compact)"
+    steps: 8         # schnell native
+    sampler_name: k_euler
+    cfg_scale: 1.0   # FLUX schnell — distilled, cfg=1
+    max_wait_s: 300
+    timeout: 360
+    latency_s: 60.0  # включает очередь — может быть и 5s, и 3min
+    quality: 70
+
+  - name: aihorde:sdxl
+    kind: aihorde
+    model: "AlbedoBase XL (SDXL)"
+    steps: 20
+    sampler_name: k_euler
+    cfg_scale: 7.0
+    max_wait_s: 300
+    timeout: 360
+    latency_s: 60.0
+    quality: 65
+
+  - name: aihorde:dreamshaper
+    kind: aihorde
+    model: "Dreamshaper"
+    steps: 20
+    sampler_name: k_euler
+    cfg_scale: 7.0
+    max_wait_s: 300
+    timeout: 360
+    latency_s: 60.0
+    quality: 60
+
+  # === Together AI — FLUX.1-schnell-Free ===
+  # OpenAI-совместимый /v1/images/generations.
+  # Статус 2026-04-22: эндпоинт принимает ключ, но возвращает HTTP 402
+  # "Credit limit exceeded" — signup-кредиты исчерпаны, даже free-suffix
+  # модель требует положительного баланса. Провайдер оставлен для случая,
+  # когда на аккаунте появятся кредиты; не включён в image_gen chain.
+  - name: together:flux-1-schnell-free
+    kind: together_image
+    model: black-forest-labs/FLUX.1-schnell-Free
+    api_key_env: TOGETHER_API_KEY
+    steps: 4
+    timeout: 90
+    latency_s: 2.5
+    quality: 68
+
+  # === Translation (text→text, только для цепочки `translation`) ===
+  # Специализированные MT-провайдеры. Sync, возвращают TranslationResult с
+  # {text, source_lang, target_lang}. Не участвуют в chat-цепочках — chat()
+  # бросает NotImplementedError.
+  #
+  # Состояние бесплатных MT API на 2026-04-23 (live-probe):
+  #   libretranslate.com/.de — стали paid-only (HTTP 400 «visit portal.libretranslate.com»)
+  #   translate.argosopentech.com / terraprint / vern-mirror — мертвы (DNS/502)
+  #   translate.fedilab.app — жив (200 OK) ← LibreTranslate-compat
+  #   api.mymemory.translated.net — жив, 5000 chars/day anon, 50000 с ?de=email
+  # DeepL/Microsoft/Yandex/Cohere Aya — требуют ключей (не заданы в env),
+  # добавить как kinds когда будут ключи (deepl/ms_translator/yandex_translate/cohere).
+
+  - name: yandex:translate
+    kind: yandex_translate
+    api_key_env: YANDEX_TRANSLATE_KEY
+    # folder_id берётся из YANDEX_FOLDER_ID автоматически. Можно переопределить
+    # полем `folder_id:` в конфиге если нужен другой каталог.
+    timeout: 30
+    rpd: 33000   # 1M chars/мес grant / 30 дней ≈ 33K символов/день, мягкий soft-cap в requests
+    rpm: 60
+    latency_s: 0.5   # измерено 2026-04-24 на ru→en (Рэлей)
+    ru: 90   # scan-00/06 ★★★★★ RU, Yandex-флагман для русского
+    quality: 40   # собственный MT-движок, не LLM (сравним с Qwen-397B по качеству на RU)
+
+  # --- Cohere chat (trial tier) — kind: cohere_chat (отдельно от cohere=translate) ---
+  # Trial: 20 RPM, 1000 calls/мес. Документация не уточняет shared/per-model для месячного
+  # квотума; rpd=33 на каждой как safe-floor (1000/30). Если квотум окажется per-model,
+  # суммарно получим 4×33≈132 RPD по Cohere; если shared — все Cohere делят один пул.
+
+  - name: cohere:command-r
+    kind: cohere_chat
+    model: command-r-08-2024
+    api_key_env: COHERE_API_KEY
+    rpm: 20
+    rpd: 33
+    timeout: 60
+    quality: 18      # estimate 2026-05-02 (smoke 2026-05-02; trial 1K calls/мес)
+    latency_s: 1.1
+    ru: 80           # estimate 2026-05-02
+
+  - name: cohere:command-r-plus
+    kind: cohere_chat
+    model: command-r-plus-08-2024
+    api_key_env: COHERE_API_KEY
+    rpm: 20
+    rpd: 33
+    timeout: 120
+    quality: 22      # estimate 2026-05-02 (smoke 2026-05-02; 104B)
+    latency_s: 1.2
+    ru: 82           # estimate 2026-05-02
+
+  - name: cohere:command-r7b
+    kind: cohere_chat
+    model: command-r7b-12-2024
+    api_key_env: COHERE_API_KEY
+    rpm: 20
+    rpd: 33
+    timeout: 60
+    quality: 10      # estimate 2026-05-02 (smoke 2026-05-02; tiny 7B)
+    latency_s: 1.0
+    ru: 70           # estimate 2026-05-02
+
+  - name: cohere:aya-expanse-32b
+    kind: cohere
+    model: c4ai-aya-expanse-32b
+    api_key_env: COHERE_API_KEY
+    # Trial tier 2026-04: 1000 calls/мес, 20 RPM per-model. rpd=33 — мягкий
+    # дневной floor чтобы не выжечь месячный квотум за день (1000/30≈33).
+    rpm: 20
+    rpd: 33
+    timeout: 60
+    latency_s: 1.1   # измерено 2026-04-23 на ru→en на Рэлее
+    ru: 82   # Aya Expanse 32B — multilingual-first, 102 lang, scan-00 ★★★★ RU (=82 в нашей шкале)
+    quality: 35   # консервативная оценка на уровне MiniMax M2.5 / Nemotron-3-Super
+
+  - name: libretranslate:fedilab
+    kind: libretranslate
+    base_url: https://translate.fedilab.app
+    # Community-mirror, без API-ключа. Может падать/медленеть — поэтому первый fallback.
+    timeout: 20
+    latency_s: 0.5   # измерено 2026-04-23 на "Привет, мир" ru→en
+    ru: 70   # LibreTranslate использует Argos Translate (OpenNMT), грамматика ок, но контекст слабее DeepL
+
+  - name: mymemory:free
+    kind: mymemory
+    # contact_email берётся из env MYMEMORY_CONTACT_EMAIL — с email лимит 50000 chars/day (без — 5000).
+    timeout: 15
+    # rpd — soft-cap в ЗАПРОСАХ (не chars). 800×~60 chars ≈ 48K/сутки если email задан;
+    # без email опускай до ~80. На жёсткий 429 включается cooldown в RateTracker (см. router._handle_failure).
+    rpd: 800
+    latency_s: 0.4   # измерено 2026-04-23 на "Привет" ru→en (~400ms round-trip)
+    ru: 74   # TM-база (гибрид MT + translation memory) — приличная для популярных пар; не поддерживает source=auto
+
+  # === Paid-only ===
+  # ВАЖНО: используется OPENROUTER_PAID_API_KEY (с $4 credit), НЕ основной OR-ключ
+  # который имеет limit=0 — на нём paid-запросы всегда падают credit_exceeded.
+  # не использовать ключ нигде самостоятельно
+
+  - name: openrouter:claude-opus-4.7
+    kind: openrouter
+    model: anthropic/claude-opus-4.7
+    api_key_env: OPENROUTER_PAID_API_KEY
+    quality: 58   # AA Index v4.0 оценка (Opus 4.7 extended thinking; подтвердить)
+    # latency_s: бенч не прогонялся для paid
+    ru: 85   # Claude Opus — эталон RU (без прогона, по внешним наблюдениям)
+
+  # OpenAI gpt-5-mini — paid-fallback после Opus. $0.25/1M in, $2.00/1M out.
+  # Использует отдельный $5-аккаунт (OPENAI_API_KEY_PAID), чтобы не путать с
+  # бесплатной модерацией на основном OPENAI_API_KEY. Если ключ пуст — выпадает
+  # из chain автоматически.
+  - name: openai:gpt-5-mini
+    kind: openai
+    model: gpt-5-mini
+    api_key_env: OPENAI_API_KEY_PAID
+    quality: 40   # AA Index v4.0 (примерно; уточнить после прогонов)
+    # latency_s: бенч не прогонялся для paid
+    ru: 90   # multilingual SOTA в линейке gpt-5
+
+  # === GigaChat (SberDevices) ===
+  # PERS scope: бесплатный personal-tier (1M токенов на 30 дней при регистрации).
+  # Авторизация двухступенчатая: Basic Authorization key → access_token (TTL 30 мин) → Bearer.
+  # Сертификат cubehost подписан Russian Trusted Root CA, поэтому verify_ssl: false по умолчанию.
+  # api_key_env: GIGACHAT_AUTH_KEY — base64("<client_id>:<client_secret>") из консоли developers.sber.ru.
+
+  - name: gigachat:2
+    kind: gigachat
+    model: GigaChat-2
+    api_key_env: GIGACHAT_AUTH_KEY
+    scope: GIGACHAT_API_PERS
+    verify_ssl: false
+    quality: 30        # ориентировочно (RU-native LLM, AA-неоценено; mid-tier по чувству)
+    latency_s: 1.6     # измерено 2026-04-25, max_tokens=300, RU prompt
+    ru: 60        # bench: 12/20 (auto, 1.21s avg)
+
+  - name: gigachat:2-pro
+    kind: gigachat
+    model: GigaChat-2-Pro
+    api_key_env: GIGACHAT_AUTH_KEY
+    scope: GIGACHAT_API_PERS
+    verify_ssl: false
+    quality: 35        # ориентировочно (RU-native pro-tier)
+    latency_s: 1.9
+    ru: 70        # bench: 14/20 (auto, 1.59s avg)
+
+  - name: gigachat:2-max
+    kind: gigachat
+    model: GigaChat-2-Max
+    api_key_env: GIGACHAT_AUTH_KEY
+    scope: GIGACHAT_API_PERS
+    verify_ssl: false
+    quality: 40        # ориентировочно (RU-native top-tier; сопоставим с Qwen 397B на RU-задачах)
+    latency_s: 2.4
+    ru: 70        # bench: 14/20 (auto, 1.76s avg)
+
+  # === Yandex AI Studio (Foundation Models) ===
+  # OpenAI-compat /v1/chat/completions, auth: Authorization: Api-Key <key>.
+  # Покрывается грантом 6 000 ₽ до 22.10.2026 (Yandex AI Studio + Search/Vision/OCR).
+  # quota_limited: true — провайдер потребляет грант/деньги, в дашборде помечен 💳.
+  # api_key_env переиспользует YANDEX_TRANSLATE_KEY (тот же сервисный аккаунт),
+  # folder_id берётся из YANDEX_FOLDER_ID env.
+
+  # Alice AI LLM (Yandex, окт 2025) — флагман над YandexGPT-Pro по диалогу и длинному
+  # контексту, лидер RU-бенчмарка SLAVA. Цена ~0.50/1.20 ₽ за 1K input/output —
+  # дороже Pro в 2-3×, но грант 6 000 ₽ до 22.10.2026 покрывает.
+  - name: yandex:alice
+    kind: yandex_foundation
+    model: aliceai-llm/latest
+    api_key_env: YANDEX_TRANSLATE_KEY
+    quota_limited: true
+    quality: 35        # ориентировочно (заявлен >YandexGPT Pro)
+    latency_s: 0.8     # bench 2026-04-25, 20-prompt avg
+    ru: 90             # bench: 18/20 (упустила instr_7_words и instr_no_o — общий хвост)
+
+  - name: yandex:art
+    kind: yandex_art
+    model: yandex-art/latest
+    api_key_env: YANDEX_TRANSLATE_KEY
+    quota_limited: true
+    quality: 70        # YandexART качество ~ FLUX.1-dev (оценка)
+    latency_s: 6.0     # async + poll, ~6с на 1024×1024
+
+  - name: gigachat:kandinsky
+    kind: gigachat_image
+    model: GigaChat-2-Max
+    api_key_env: GIGACHAT_AUTH_KEY
+    scope: GIGACHAT_API_PERS
+    verify_ssl: false
+    quota_limited: true
+    quality: 65        # Kandinsky 3.1 (оценка; RU-friendly, 1024×1024 only)
+    latency_s: 8.0     # генерация + fetch файла, заметно медленнее YandexART
+
+  # === Embeddings — text + code, через /v1/embeddings ===
+  # Все модели верифицированы live-probe 2026-04-25 (см. apicount.md).
+  # `dim` = нативная размерность (для Voyage/Jina-v5 поддерживается MRL truncation
+  # через payload `dimensions=N` в запросе пользователя).
+
+  # --- text-embeddings ---
+  - name: voyage:voyage-3.5
+    kind: voyage_embed
+    model: voyage-3.5
+    api_key_env: VOYAGE_API_KEY
+    dim: 1024
+    quality: 80        # Voyage-3.5 — MTEB-multi top tier (оценка)
+    # 200M tok permanent free per-model — независимый бакет от chat-провайдеров.
+    # Без RPM-кэпа в free-tier (на 2026-04-25); ограничение только по token-pool.
+
+  - name: voyage:voyage-3.5-lite
+    kind: voyage_embed
+    model: voyage-3.5-lite
+    api_key_env: VOYAGE_API_KEY
+    dim: 1024
+    quality: 70        # быстрее/дешевле, точность ниже на ~3pp
+
+  - name: voyage:voyage-3-large
+    kind: voyage_embed
+    model: voyage-3-large
+    api_key_env: VOYAGE_API_KEY
+    dim: 1024
+    quality: 78        # large-checkpoint, выше ванильного 3.5 на сложных запросах
+
+  - name: jina:embeddings-v5-text-small
+    kind: jina_embed
+    model: jina-embeddings-v5-text-small
+    api_key_env: JINA_API_KEY
+    dim: 1024
+    extra_body:
+      task: retrieval.passage   # default — индексация. Override: `task: retrieval.query` в запросе.
+      normalized: true
+    quality: 75        # Jina v5 small — лучший free multi-lingual (89 langs)
+
+  - name: jina:embeddings-v3
+    kind: jina_embed
+    model: jina-embeddings-v3
+    api_key_env: JINA_API_KEY
+    dim: 1024
+    extra_body:
+      task: retrieval.passage
+    quality: 70        # v3 — стабильный fallback если v5 затупит
+
+  - name: gemini:embedding-001
+    kind: gemini_embed
+    model: gemini-embedding-001
+    api_key_env: GEMINI_API_KEY
+    dim: 3072
+    rpd: 1500          # delит pool с chat-Gemini того же ключа — на индексации легко выжечь chat
+    rpm: 100
+    quality: 78        # MTEB-multi сильный, но shared quota — поэтому не первым
+
+  - name: cohere:embed-multilingual-v3
+    kind: cohere_embed
+    model: embed-multilingual-v3.0
+    api_key_env: COHERE_API_KEY
+    dim: 1024
+    quota_limited: true  # 1000 calls/мес trial — экономим
+    quality: 73
+
+  - name: cohere:embed-v4
+    kind: cohere_embed
+    model: embed-v4.0
+    api_key_env: COHERE_API_KEY
+    dim: 1536
+    quota_limited: true  # тот же 1000/мес pool
+    quality: 80        # SOTA в multilingual + image (но image не используем тут)
+
+  - name: mistral:embed
+    kind: mistral_embed
+    model: mistral-embed
+    api_key_env: MISTRAL_API_KEY
+    dim: 1024
+    rpm: 4             # тот же 4 RPM Experiment plan что у chat-Mistral (shared)
+    quality: 65
+
+  - name: github:text-embedding-3-large
+    kind: github_embed
+    model: openai/text-embedding-3-large
+    api_key_env: GITHUB_MODELS_TOKEN
+    dim: 3072
+    rpm: 10
+    rpd: 50            # Copilot-free per-model bucket
+    quality: 72
+
+  - name: github:text-embedding-3-small
+    kind: github_embed
+    model: openai/text-embedding-3-small
+    api_key_env: GITHUB_MODELS_TOKEN
+    dim: 1536
+    rpm: 15
+    rpd: 150
+    quality: 60
+
+  - name: nvidia:nv-embedqa-e5-v5
+    kind: nvidia_embed
+    model: nvidia/nv-embedqa-e5-v5
+    api_key_env: NVIDIA_API_KEY
+    dim: 1024
+    rpm: 40
+    extra_body:
+      input_type: query   # NV-EmbedQA требует input_type. По умолчанию query;
+                           # для индексации передавай `input_type: passage` в запросе.
+    quality: 60        # 512 ctx — узкое горлышко для длинных чанков
+
+  - name: cloudflare:bge-m3
+    kind: cloudflare_embed
+    model: "@cf/baai/bge-m3"
+    api_key_env: CLOUDFLARE_API_KEY
+    dim: 1024
+    rpd: 300           # часть 10K neurons/день shared pool
+    quality: 55        # bge-m3 ниже среднего на новых бенчах
+
+  # --- code-embeddings ---
+  - name: voyage:voyage-code-3
+    kind: voyage_embed
+    model: voyage-code-3
+    api_key_env: VOYAGE_API_KEY
+    dim: 1024
+    quality: 85        # SOTA для code-search (MTEB-Code, 2025)
+
+  - name: jina:code-embeddings-1.5b
+    kind: jina_embed
+    model: jina-code-embeddings-1.5b
+    api_key_env: JINA_API_KEY
+    dim: 1536
+    extra_body:
+      task: retrieval.passage
+      normalized: true
+    quality: 78        # новейший Jina code-embedder (2026)
+
+  - name: mistral:codestral-embed
+    kind: mistral_embed
+    model: codestral-embed
+    api_key_env: MISTRAL_API_KEY
+    dim: 1536
+    rpm: 4             # shared с chat-Mistral pool
+    quality: 75
+
+  - name: jina:embeddings-v2-base-code
+    kind: jina_embed
+    model: jina-embeddings-v2-base-code
+    api_key_env: JINA_API_KEY
+    dim: 768
+    quality: 60        # старый, но проверенный last-resort
+
+  # === Reranker — POST /rerank, второй этап RAG (cross-encoder поверх top-N) ===
+  # Все три провайдера принимают {query, documents:[str], top_n}, возвращают
+  # отсортированный список {index, relevance_score}. Шейпы почти идентичны —
+  # унифицированы в RerankProvider (Voyage использует top_k/data вместо top_n/results).
+
+  - name: jina:reranker-v3
+    kind: jina_rerank
+    model: jina-reranker-v3
+    api_key_env: JINA_API_KEY
+    quality: 88        # SOTA multilingual reranker (2026), 131K total ctx
+    ru: 90
+    # 10M tok pool на ключ — общий с Jina embeddings/Reader.
+
+  - name: jina:reranker-v2-base-multilingual
+    kind: jina_rerank
+    model: jina-reranker-v2-base-multilingual
+    api_key_env: JINA_API_KEY
+    quality: 78        # стабильный fallback v2 (8K ctx)
+    ru: 85
+
+  - name: cohere:rerank-v3.5
+    kind: cohere_rerank
+    model: rerank-v3.5
+    api_key_env: COHERE_API_KEY
+    quota_limited: true  # 1000 calls/мес trial — общий с cohere-embed
+    quality: 85        # SOTA EN/multilingual, 4K ctx
+    ru: 90
+
+  - name: voyage:rerank-2.5
+    kind: voyage_rerank
+    model: rerank-2.5
+    api_key_env: VOYAGE_API_KEY
+    quality: 80        # 32K ctx — длинные документы переживёт лучше Cohere/Jina-v2
+    ru: 75
+    # 200M tok permanent free per-model — независимый от chat бакет.
+
+  - name: voyage:rerank-2.5-lite
+    kind: voyage_rerank
+    model: rerank-2.5-lite
+    api_key_env: VOYAGE_API_KEY
+    quality: 70        # быстрее/дешевле, last-resort
+
+  # === Moderation (text + image, только для цепочек `moderation*`) ===
+  # Шейп ответа единый — OpenAI omni-moderation:
+  #   {results: [{flagged, categories, category_scores}]}
+  # Llama Guard выдаёт `safe`/`unsafe\nS1,S5` — парсер мапит S-коды в OpenAI-категории.
+  # Llama Guard 4 12B мультимодальный (multimodal: true), Guard 3-8B и Prompt Guard — text-only.
+
+  - name: openai:moderation
+    kind: openai_moderation
+    model: omni-moderation-latest
+    api_key_env: OPENAI_API_KEY
+    timeout: 30
+    quality: 90    # эталон, 13 категорий, native scores
+    latency_s: 0.4
+    ru: 85         # SOTA на multilingual
+
+  # Legacy text-only OpenAI moderation (7 категорий, без image, без category_scores).
+  # Тот же бесплатный endpoint /v1/moderations, тот же ключ. Держим как backup
+  # к omni-moderation: если omni упадёт по сети, text-moderation чаще живёт
+  # (старая дешёвая модель, отдельный pool).
+  - name: openai:text-moderation
+    kind: openai_moderation
+    model: text-moderation-latest
+    api_key_env: OPENAI_API_KEY
+    timeout: 30
+    quality: 65    # legacy, 7 категорий, без scores на части полей
+    latency_s: 0.3
+    ru: 70         # multilingual, но слабее чем omni
+
+  - name: mistral:moderation
+    kind: mistral_moderation
+    model: mistral-moderation-latest
+    api_key_env: MISTRAL_API_KEY
+    timeout: 30
+    quality: 70    # text-only, 9 категорий с scores
+    latency_s: 0.5
+    ru: 80
+    rpm: 4   # та же Experiment-квота что и chat-mistral (per-key минута)
+
+  # Cloudflare Workers AI — единственный бесплатный Llama-Guard-style endpoint
+  # с реально живыми лимитами (10K neurons/день). 3-8B text-only.
+  - name: cloudflare:llama-guard-3-8b
+    kind: llama_guard
+    host: cloudflare
+    model: "@cf/meta/llama-guard-3-8b"
+    api_key_env: CLOUDFLARE_API_KEY
+    multimodal: false
+    rpd: 300
+    quality: 50
+    latency_s: 0.8
+    ru: 60
+
+  # Groq Llama-Prompt-Guard-2 — узкий специалист по prompt-injection / jailbreak
+  # детекции (НЕ general moderation). Держим в moderation_jailbreak first.
+  # Llama-Guard-4-12B на Groq decommissioned 2026-04 — заменён prompt-guard-2.
+  - name: groq:prompt-guard-2-86m
+    kind: llama_guard
+    host: groq
+    model: meta-llama/llama-prompt-guard-2-86m
+    api_key_env: GROQ_API_KEY
+    multimodal: false
+    rpm: 30
+    rpd: 1000
+    quality: 55
+    latency_s: 0.4
+    ru: 30   # EN-trained
+
+  # Together AI Llama Guard 4 12B — multimodal (text+image). Free тиер user'а
+  # на 2026-04-25 = 0 credits (HTTP 402). Оставляем определение чтобы при
+  # добавлении кредитов можно было раскомментировать в chains. quota_limited:true
+  # → router пропускает быстрее на rate_capped/non-retryable ошибках.
+  - name: together:llama-guard-4
+    kind: llama_guard
+    host: together
+    model: meta-llama/Llama-Guard-4-12B
+    api_key_env: TOGETHER_API_KEY
+    multimodal: true
+    quota_limited: true
+    timeout: 60
+    quality: 65
+    latency_s: 0.7
+    ru: 75
+
+  - name: together:qwen3-guard
+    kind: llama_guard
+    host: together
+    model: Qwen/Qwen3-Guard-Stream-8B
+    api_key_env: TOGETHER_API_KEY
+    multimodal: false
+    quota_limited: true
+    timeout: 60
+    quality: 60
+    latency_s: 0.9
+    ru: 85   # Qwen — лучший open-weight safety classifier для не-EN языков
+
+  # === FreeTheAi (api.freetheai.xyz) — OpenAI-compat, ~16k aliases ===================
+  # ⚠️ Все эти провайдеры требуют DAILY Discord /checkin (https://discord.gg/secrets,
+  # канал #api-keys, команда /checkin). Без чек-ина любой запрос → HTTP 403
+  # daily_checkin_required. Автоматизировать НЕЛЬЗЯ (Discord ToS). Из-за этого
+  # стоят в самом ХВОСТЕ chat-цепочки и отдельными позициями в quality:
+  # активны только когда чек-ин свежий, иначе быстро отваливаются и пропускаются.
+  # Лимит 10 RPM + 1 concurrent делится на ВСЕХ freetheai-моделей вместе (один ключ).
+  # Метрики latency_s измерены 2026-05-08 через probe v1-v4. RU-проверка пройдена для
+  # bbg/* (правильно ответили "Москва"). cat/* — identity-check на уровне claims, не
+  # верифицирован глубже. cat/claude-* и bbg/deepseek-v4-pro — bait, не подключены.
+  - name: freetheai:gemini-2.5-flash
+    kind: freetheai
+    model: bbl/gemini-2.5-flash
+    api_key_env: FREETHEAI_API_KEY
+    rpm: 10  # shared bucket на все freetheai-провайдеры
+    timeout: 60
+    latency_s: 4.1
+    # ru: не верифицирован отдельным RU-бенчем
+
+  - name: freetheai:gpt-5
+    kind: freetheai
+    model: cat/gpt-5
+    api_key_env: FREETHEAI_API_KEY
+    rpm: 10
+    timeout: 60
+    latency_s: 5.3
+    # identity claim: "embedded in FreeTheAi.xyz, built by OpenAI"
+
+  - name: freetheai:gpt-5-mini
+    kind: freetheai
+    model: cat/gpt-5-mini
+    api_key_env: FREETHEAI_API_KEY
+    rpm: 10
+    timeout: 60
+    latency_s: 5.6
+    # identity claim: "I am ChatGPT, a large language model created by OpenAI"
+
+  - name: freetheai:minimax-m2.7
+    kind: freetheai
+    model: bbg/MiniMaxAI/MiniMax-M2.7
+    api_key_env: FREETHEAI_API_KEY
+    rpm: 10
+    timeout: 90  # reasoning, дольше
+    latency_s: 5.2
+    reasoning: true
+    ru: 75   # probe v2: правильно ответил "Москва"
+
+  - name: freetheai:kimi-k2.6
+    kind: freetheai
+    model: bbg/moonshotai/Kimi-K2.6
+    api_key_env: FREETHEAI_API_KEY
+    rpm: 10
+    timeout: 90
+    latency_s: 7.2
+    reasoning: true
+    ru: 75   # probe v2: " Москва"
+
+  - name: freetheai:glm-5.1
+    kind: freetheai
+    model: bbg/zai-org/GLM-5.1
+    api_key_env: FREETHEAI_API_KEY
+    rpm: 10
+    timeout: 90
+    latency_s: 8.7
+    reasoning: true
+    ru: 80   # probe v2: правильно "Москва", #3 в leaderboard
+
+  # === FreeTheAi image-gen — kind: freetheai_image. URL-ответы vhr/* протухают
+  # за ~30 мин (404), поэтому FreeTheAiImageProvider скачивает + перекодирует в
+  # b64 во время запроса. Делит ту же 10 RPM / 1 concurrent квоту, что и chat-
+  # провайдеры (один ключ). Все хвостом в image_gen после CF/Yandex/GigaChat.
+  - name: freetheai_image:seedream_v4
+    kind: freetheai_image
+    model: vhr/bytedance_seedream_v4
+    api_key_env: FREETHEAI_API_KEY
+    rpm: 10
+    timeout: 60
+    latency_s: 15.5  # gen-only, без download (download +1-3s сверху)
+    quality: 70      # 768×768+, фотореализм OK на тестах с яблоком
+
+  - name: freetheai_image:flux_dev
+    kind: freetheai_image
+    model: vhr/flux_dev
+    api_key_env: FREETHEAI_API_KEY
+    rpm: 10
+    timeout: 60
+    latency_s: 17.0
+    quality: 65
+
+  - name: freetheai_image:nano_banana_2
+    kind: freetheai_image
+    model: vhr/nano_banana_2
+    api_key_env: FREETHEAI_API_KEY
+    rpm: 10
+    timeout: 60
+    latency_s: 22.7
+    quality: 60
+
+  - name: freetheai_image:gpt_image_2
+    kind: freetheai_image
+    model: img/gpt-image-2
+    api_key_env: FREETHEAI_API_KEY
+    rpm: 10
+    timeout: 90
+    latency_s: 21.0  # b64 native (~650KB PNG), без extra download
+    quality: 70
+    # ⚠️ upstream — реальный OpenAI gpt-image на общем пуле. 429 случается часто.
+
+  - name: freetheai_image:gpt_image_2_vhr
+    kind: freetheai_image
+    model: vhr/gpt_image_2
+    api_key_env: FREETHEAI_API_KEY
+    rpm: 10
+    timeout: 90
+    latency_s: 30.5
+    quality: 65
+
+# ==================================================================================
+# Цепочки. Порядок = приоритет фоллбэка.
+# ==================================================================================
+
+default_chain: chat
+
+chains:
+  # --- chat: RU-floor + AA tiebreak (deepchain1) ---
+  chat:
+    - github:gpt-4.1-mini
+    - yandex:alice
+    - gemini:2.5-flash-lite
+    - sambanova:llama-4-maverick
+    - freetheai:gemini-2.5-flash         # 4.1s · переехал из хвоста (circuit-breaker, 2026-05-08)
+    - openrouter:minimax-m2.5-free
+    - cerebras:qwen-3-235b
+    - gemini:flash-lite-latest
+    - gemini:2.5-flash
+    - sambanova:deepseek-v3.2
+    - freetheai:gpt-5                    # 5.3s · claims OpenAI gpt-5 (frontier)
+    - sambanova:deepseek-v3.1
+    - github:gpt-4o-mini
+    - groq:llama-4-scout
+    - groq:gpt-oss-120b
+    - openrouter:gpt-oss-120b-free
+    - groq:gpt-oss-20b
+    - mistral:large
+    - zai:glm-4.5-flash
+    - nvidia:qwen3.5-397b
+    - pollinations:gpt-oss-20b
+    - gigachat:2-pro
+    - gigachat:2-max
+    - openrouter:glm-4.5-air-free
+    - cerebras:llama3.1-8b
+    - groq:llama-3.3-70b
+    - openrouter:ling-flash-free
+    - cloudflare:llama-3.3-70b-fp8-fast
+    - openrouter:gemma-3-27b-free
+    - groq:qwen3-32b
+    - groq:llama-3.1-8b-instant
+    - gigachat:2
+    - nvidia:llama-3.3-70b
+    - sambanova:llama-3.3-70b
+    - openrouter:free-router
+    - github:llama-3.3-70b
+    - gemini:flash-latest
+    - github:deepseek-v3
+    - openrouter:ling-1t-free
+    # --- 2026-05-02 estimates additions (pending ru_bench, см. metrics в providers) ---
+    - cohere:command-r-plus              # AA 22, RU 82, 1.2s — Cohere flagship trial (1K calls/мес shared)
+    - cohere:command-r                   # AA 18, RU 80, 1.1s — Cohere R 35B
+    - openrouter:gemma-4-31b-free        # AA 25, RU 78, 1.7s — NEW Gemma 4 dense, ctx 262k
+    - openrouter:gemma-3-12b-free        # AA 13, RU 70, 2.1s
+    - openrouter:nemotron-3-nano-omni-r-free  # AA 18, RU 70, 3.1s — reasoning + multimodal
+    - openrouter:nemotron-3-nano-30b-free     # AA 18, RU 70, 4.0s — reasoning
+    - cohere:command-r7b                 # AA 10, RU 70, 1.0s — tiny 7B
+    - openrouter:laguna-m.1:free         # AA 14, RU 65, 2.1s — Poolside coder, general OK
+    - openrouter:gpt-oss-20b-free        # AA 11, RU 65, 1.8s — same model groq:gpt-oss-20b
+    - openrouter:gemma-3-4b-free         # AA 7,  RU 65, 2.2s
+    - openrouter:gemma-4-26b-free        # AA 22, RU 75, ~3s — NEW Gemma 4 MoE (429-flaky upstream)
+    - openrouter:qwen3-next-80b-free     # AA 24, RU 75, ~5s — Qwen3 Next 80B/3B MoE (429-flaky)
+    - openrouter:hermes-3-405b-free      # AA 22, RU 60, ~30s — Hermes-3 на L3.1-405B (slow, 429-flaky)
+    - openrouter:llama-3.3-70b-free      # AA 15, RU 60, ~5s (429-flaky)
+    - openrouter:gemma-3n-e4b-free       # AA 6,  RU 55, 1.5s — nano 4B
+    - openrouter:qwen3-coder-free        # AA 19, RU 55, ~5s — code-spec (429-flaky)
+    - openrouter:gemma-3n-e2b-free       # AA 4,  RU 50, 1.4s — nano 2B
+    - openrouter:llama-3.2-3b-free       # AA 8,  RU 45, ~2s (429-flaky)
+    - openrouter:dolphin-venice-24b:free # AA 12, RU 45, ~5s — uncensored Mistral 24B (429-flaky)
+    - openrouter:lfm-2.5-thinking:free   # AA 5,  RU 30 — tiny 1.2B reasoning, last-resort
+    # --- FreeTheAi (⚠️ daily Discord /checkin required, circuit-breaker 60s)
+    # gemini-2.5-flash и gpt-5 перенесены наверх, остальные оставлены последним резервом
+    - freetheai:gpt-5-mini               # 5.6s, claims OpenAI/ChatGPT
+    - freetheai:minimax-m2.7             # 5.2s, RU 75, reasoning (MiniMax-M2.7)
+    - freetheai:kimi-k2.6                # 7.2s, RU 75, reasoning (Kimi-K2.6)
+    - freetheai:glm-5.1                  # 8.7s, RU 80, reasoning (GLM-5.1, leaderboard #3)
+
+  # --- chat_fast: chat minus всех с latency_s > 5s ---
+  # Тот же порядок/приоритет что chat, но вычищены «долгодумы»:
+  #   nvidia:qwen3.5-397b (72s), openrouter:minimax-m2.5-free (9.5s, reasoning),
+  #   mistral:large (11.9s), github:gpt-4.1-mini (5.4s),
+  #   nvidia:llama-3.3-70b (10.8s), github:llama-3.3-70b (13s),
+  #   openrouter:glm-4.5-air-free (98s, reasoning),
+  #   cloudflare:llama-3.3-70b-fp8-fast (18s), zai:glm-4.5-flash (74s, reasoning),
+  #   openrouter:gpt-oss-120b-free (5.2s, reasoning), openrouter:free-router (20s).
+  # Пороги строгие: ≤5s (sambanova:llama-3.3-70b на границе 5.0s — оставлен).
+  chat_fast:
+    - github:gpt-4.1-mini
+    - yandex:alice
+    - gemini:2.5-flash-lite
+    - sambanova:llama-4-maverick
+    - freetheai:gemini-2.5-flash         # 4.1s · переехал из хвоста (circuit-breaker, 2026-05-08)
+    - cerebras:qwen-3-235b
+    - gemini:flash-lite-latest
+    - gemini:2.5-flash
+    - sambanova:deepseek-v3.2
+    - sambanova:deepseek-v3.1
+    - github:gpt-4o-mini
+    - groq:llama-4-scout
+    - groq:gpt-oss-120b
+    - openrouter:gpt-oss-120b-free
+    - groq:gpt-oss-20b
+    - mistral:large
+    - gigachat:2-pro
+    - gigachat:2-max
+    - cerebras:llama3.1-8b
+    - groq:llama-3.3-70b
+    - openrouter:ling-flash-free
+    - cloudflare:llama-3.3-70b-fp8-fast
+    - openrouter:gemma-3-27b-free
+    - groq:qwen3-32b
+    - groq:llama-3.1-8b-instant
+    - gigachat:2
+    - nvidia:llama-3.3-70b
+    - sambanova:llama-3.3-70b
+    - github:llama-3.3-70b
+    - github:deepseek-v3
+    - openrouter:ling-1t-free
+    # --- 2026-05-02 estimates additions (latency ≤5s по smoke) ---
+    - cohere:command-r                   # 1.1s, RU 80
+    - cohere:command-r-plus              # 1.2s, RU 82
+    - cohere:command-r7b                 # 1.0s, RU 70
+    - openrouter:gemma-4-31b-free        # 1.7s, RU 78, AA 25 — NEW
+    - openrouter:gpt-oss-20b-free        # 1.8s, RU 65
+    - openrouter:gemma-3-12b-free        # 2.1s, RU 70
+    - openrouter:laguna-m.1:free         # 2.1s, RU 65
+    - openrouter:gemma-3-4b-free         # 2.2s, RU 65
+    - openrouter:gemma-3n-e4b-free       # 1.5s, RU 55
+    - openrouter:gemma-3n-e2b-free       # 1.4s, RU 50
+    - openrouter:nemotron-3-nano-omni-r-free # 3.1s, RU 70 — reasoning, остановит для chat_fast если важна скорость
+    - openrouter:nemotron-3-nano-30b-free    # 4.0s, RU 70 — reasoning
+    - openrouter:gemma-4-26b-free        # ~3s, RU 75 — 429-flaky
+    # (freetheai:gemini-2.5-flash переехал в начало после circuit-breaker, 2026-05-08)
+
+  # --- code: reasoning + SWE/LCB composite (deepchain1) ---
+  code:
+    # --- 2026-05-02: gemini вернулся в топ — пофикшен адаптер ---
+    # (FunctionResponse.name теперь подставляется из предыдущего assistant.tool_calls
+    #  по tool_call_id — Claude Code через claude-code-router больше не падает 400).
+    - nvidia:qwen3-coder-480b         # 2.0s · 480B/35B, 256k ctx, agentic SWE-V ~52%, code-specialized
+    - gemini:flash-latest             # 92 · SWE 78, LCB 90.8
+    - nvidia:qwen3.5-397b             # 88 · SWE 76.4
+    - sambanova:deepseek-v3.2         # 85 · LCB 89.6, AA 46
+    - openrouter:nemotron-3-super-free # 78 · SWE 60.5, agentic
+    - groq:gpt-oss-120b               # 76 · AA 33, reasoning-high
+    - openrouter:gpt-oss-120b-free    # 76 · same model backup via OR/OpenInference # 76 · 0.9s, грант (быстрее groq, ~33₽/1М tok)
+    - sambanova:deepseek-v3.1         # 72 · hybrid reasoning
+    - cerebras:qwen-3-235b             # 70 · reasoning AA 30
+    - gemini:flash-lite-latest        # 65 · AA 34 thinking
+    - openrouter:minimax-m2.5-free    # ~60 · MiniMax M2.5 reasoning, M2 family известно сильна в кодинге
+    - nvidia:step-3.5-flash           # 12.5s · 200B MoE reasoning, StepFun (NEW 2026-05-02)
+    - mistral:large                   # 55 · 675B MoE
+    - github:gpt-4.1-mini             # 52
+    # gpt-oss-20b/llama-8b/free-router исключены 2026-05-02: «спасают» tool-call
+    # запросы пустыми/невалидными ответами — cline получает unparsable response.
+    - gemini:2.5-flash                # 45
+    - gemini:gemma-4-31b-it           # 13.3s · NEW Gemma 4 dense, 2026-05-02
+    - sambanova:llama-4-maverick      # 40
+    - github:deepseek-v3              # 38 · V3-0324
+    - openrouter:glm-4.5-air-free     # 37 · reasoning
+    - groq:llama-4-scout              # 32
+    - groq:qwen3-32b                  # 30 · reasoning
+    - zai:glm-4.5-flash               # 28
+    - gemini:2.5-flash-lite           # 25
+    - sambanova:llama-3.3-70b         # 22
+    - nvidia:nemotron-llama-49b       # 22 · NAS-pruned
+    - groq:llama-3.3-70b              # 22
+    - nvidia:llama-3.3-70b            # 22
+    - github:llama-3.3-70b            # 22
+    - github:gpt-4o-mini              # 20
+    # --- 2026-05-02 estimates additions ---
+    - openrouter:qwen3-coder-free        # code-spec, AA 19, ctx 262k (429-flaky)
+    - openrouter:laguna-m.1:free         # Poolside coder M.1, AA 14
+    - openrouter:gemma-4-31b-free        # AA 25 general, NEW
+    - openrouter:qwen3-next-80b-free     # AA 24 general, ctx 262k (429-flaky)
+    - openrouter:hermes-3-405b-free      # AA 22 general (slow, 429-flaky)
+    - openrouter:nemotron-3-nano-30b-free # AA 18 reasoning
+    - cohere:command-r-plus              # AA 22 — Cohere R+ on code OK
+    - cohere:command-r                   # AA 18
+    # --- FreeTheAi (⚠️ daily Discord /checkin required) ---
+    - freetheai:kimi-k2.6                # 7.2s · Moonshot Kimi-K2 family, известна как coder
+    - freetheai:minimax-m2.7             # 5.2s · MiniMax M2.7 reasoning, M2 family сильна в коде
+    - freetheai:gpt-5                    # 5.3s · claims OpenAI gpt-5, frontier coder
+    - freetheai:gpt-5-mini               # 5.6s · claims ChatGPT (gpt-5-mini)
+    - freetheai:glm-5.1                  # 8.7s · GLM-5.1 reasoning general-purpose
+
+  # === code_fast: только модели с реальным latency ≤10s (probe 2026-05-02). ===
+  # Топ-приоритет: code-specialized + agentic-friendly.
+  code_fast:
+    - nvidia:qwen3-coder-480b         # 2.0s · 480B/35B, 256k ctx, code-spec ⭐
+    - gemini:flash-latest             # 3.6s · SWE 78, LCB 90.8 (top quality на коде)
+    - cerebras:qwen-3-235b            # 1.1s · reasoning, AA 30
+    - groq:gpt-oss-120b               # 1.3s · reasoning, AA 33
+    - sambanova:llama-4-maverick      # 1.6s · 17B/128E
+    - sambanova:deepseek-v3.2         # 3.4s · LCB 89.6, AA 46
+    - sambanova:deepseek-v3.1         # 3.2s · hybrid reasoning
+    - gemini:2.5-flash                # 3.5s · thinking on by default
+    - github:gpt-4.1-mini             # 5.4s · solid GPT-4.1
+    - groq:qwen3-32b                  # ~3s · reasoning
+    - openrouter:qwen3-coder-free     # ~5s · code-spec via OR (429-flaky)
+    - openrouter:gpt-oss-120b-free    # 5.2s · same model backup (free)
+    # --- FreeTheAi (≤10s only, ⚠️ daily Discord /checkin required) ---
+    - freetheai:gemini-2.5-flash      # 4.1s · non-reasoning, gemini-2.5-flash backend
+    - freetheai:minimax-m2.7          # 5.2s · MiniMax M2 reasoning (coder family)
+    - freetheai:gpt-5                 # 5.3s · claims OpenAI gpt-5
+    - freetheai:gpt-5-mini            # 5.6s · claims gpt-5-mini
+    - freetheai:kimi-k2.6             # 7.2s · Kimi K2 reasoning (coder family)
+
+  # --- latency: медианы Total time из v2-бенча (max_tokens=600, LATENCY_TEST_v2_default.md 2026-04-20) ---
+  latency:
+    - cerebras:llama3.1-8b            # 421ms total
+    - groq:llama-3.1-8b-instant       # 668ms
+    - groq:gpt-oss-20b                # 714ms ← воскрес в v2 (v1 ломался из-за max_tokens=300)
+    - groq:llama-4-scout              # 907ms
+    - yandex:alice                # ~700ms · YandexGPT Pro (грант)
+    - cerebras:qwen-3-235b            # 1098ms (4/5 OK — 429 под нагрузкой)
+    - openrouter:ling-flash-free      # 1240ms (Novita backend)
+    - groq:qwen3-32b                  # 1304ms
+    - groq:gpt-oss-120b               # 1335ms
+    - gigachat:2                      # ~1600ms · Sber GigaChat-2 (RU-native)
+    - sambanova:llama-4-maverick      # 1641ms
+    - gigachat:2-pro                  # ~1900ms · Sber GigaChat-2-Pro
+    - groq:llama-3.3-70b              # 2164ms
+    - gigachat:2-max                  # ~2400ms · Sber GigaChat-2-Max (top RU)
+    - gemini:flash-lite-latest        # 2612ms
+    - openrouter:ling-1t-free         # 2630ms · Ling 2.6 1T MoE (Novita backend)
+    - gemini:2.5-flash-lite           # 2626ms
+    - openrouter:gemma-3-27b-free     # 3118ms (2/3 OK)
+    - pollinations:gpt-oss-20b        # ~4000ms (unique RU prompt, reasoning-heavy)
+    - sambanova:deepseek-v3.1         # 3216ms
+    - sambanova:deepseek-v3.2         # 3448ms
+    - gemini:2.5-flash                # 3529ms (1/5 OK — квота)
+    - gemini:flash-latest             # 3582ms
+    - github:gpt-4o-mini              # 3867ms
+    - github:deepseek-v3              # 4639ms (1/5 OK — flaky на длинных ответах)
+    - sambanova:llama-3.3-70b         # 4991ms
+    - openrouter:gpt-oss-120b-free    # 5199ms (3/3 OK, OpenInference backend)
+    - github:gpt-4.1-mini             # 5371ms
+    - openrouter:minimax-m2.5-free    # 9520ms (reasoning-heavy, первый cold-call 32s)
+    - nvidia:llama-3.3-70b            # 10767ms
+    - mistral:large                   # 11884ms (TTFT 375ms быстрый, bulk 49 t/s)
+    - github:llama-3.3-70b            # 13025ms
+    - cloudflare:llama-3.3-70b-fp8-fast # 17941ms (TTFT 342ms, bulk медленный)
+    - openrouter:nemotron-3-super-free # 19842ms (весь в reasoning thinking)
+    - openrouter:free-router          # 20506ms (high variance last-resort)
+    - nvidia:nemotron-llama-49b       # 27105ms
+    - nvidia:qwen3.5-397b             # 71904ms ← reasoning-чудище, в latency не место
+    - zai:glm-4.5-flash               # 74203ms
+    - openrouter:glm-4.5-air-free     # 98431ms ← reasoning + free route
+
+  # --- quality: AA Intelligence Index v4.0 (deepchain1) ---
+  quality:
+    - freetheai:gpt-5                 # claims OpenAI gpt-5 (frontier · 5.3s) · 2026-05-08 · circuit-breaker лочит на 60s при 403 daily_checkin
+    - gemini:flash-latest             # AA 46 (reasoning)
+    - sambanova:deepseek-v3.2         # AA 46 (reasoning)
+    - freetheai:glm-5.1               # GLM-5.1 reasoning, RU 80 (8.7s) · #3 в leaderboard freetheai
+    - nvidia:qwen3.5-397b             # AA ~40 (Feb 2026)
+    - openrouter:nemotron-3-super-free # AA ~35 (Mar 2026)
+    - openrouter:minimax-m2.5-free    # AA ~35 (MiniMax M2.5 reasoning, оценка)
+    - gemini:flash-lite-latest        # AA 34
+    - groq:gpt-oss-120b               # AA 33 (high)
+    - openrouter:gpt-oss-120b-free    # AA 33 (same model, backup)
+    - cerebras:qwen-3-235b            # AA 30 (reasoning)
+    - openrouter:ling-1t-free         # AA ~30 (Ling 2.6 1T MoE, оценка)
+    - sambanova:deepseek-v3.1         # AA 28
+    - groq:gpt-oss-20b                # AA ~25 (high)
+    - pollinations:gpt-oss-20b        # AA 25 · same model backup (OVH, no-auth)
+    - openrouter:glm-4.5-air-free     # AA 24 (reasoning)
+    - mistral:large                   # AA 23
+    - github:gpt-4.1-mini             # AA 23
+    - github:deepseek-v3              # AA 22
+    - gemini:2.5-flash                # AA 21
+    - zai:glm-4.5-flash               # AA ~20
+    - openrouter:gemma-3-27b-free     # AA 20 (Gemma 3 27B)
+    - openrouter:free-router          # AA ~20 (lottery)
+    - openrouter:ling-flash-free      # AA ~18 (Ling 2.6 Flash, оценка)
+    - sambanova:llama-4-maverick      # AA ~17
+    - groq:qwen3-32b                  # AA 17 (reasoning)
+    - sambanova:llama-3.3-70b         # AA 15
+    - groq:llama-3.3-70b              # AA 15
+    - nvidia:llama-3.3-70b            # AA 15
+    - nvidia:nemotron-llama-49b       # AA 15
+    - github:llama-3.3-70b            # AA 15
+    - cloudflare:llama-3.3-70b-fp8-fast # AA 14
+    - groq:llama-4-scout              # AA 14
+    - gemini:2.5-flash-lite           # AA 13
+    - github:gpt-4o-mini              # AA 13
+    - cerebras:llama3.1-8b            # AA 12
+    - groq:llama-3.1-8b-instant       # AA 12
+    # --- 2026-05-02 estimates additions (AA по экстраполяции/AA Index lookup) ---
+    - openrouter:gemma-4-31b-free        # AA 25 — NEW Gemma 4 dense
+    - openrouter:qwen3-next-80b-free     # AA 24 (429-flaky)
+    - cohere:command-r-plus              # AA 22
+    - openrouter:gemma-4-26b-free        # AA 22 NEW MoE (429-flaky)
+    - openrouter:hermes-3-405b-free      # AA 22 Hermes-3/L3.1-405B (slow, 429-flaky)
+    - openrouter:qwen3-coder-free        # AA 19 (429-flaky)
+    - openrouter:nemotron-3-nano-30b-free # AA 18 reasoning
+    - openrouter:nemotron-3-nano-omni-r-free # AA 18 reasoning + multimodal
+    - cohere:command-r                   # AA 18
+    - openrouter:llama-3.3-70b-free      # AA 15 (429-flaky)
+    - openrouter:laguna-m.1:free         # AA 14
+    - openrouter:gemma-3-12b-free        # AA 13
+    - openrouter:dolphin-venice-24b:free # AA 12 uncensored (429-flaky)
+    - openrouter:gpt-oss-20b-free        # AA 11
+    - cohere:command-r7b                 # AA 10
+    # --- FreeTheAi (⚠️ daily Discord /checkin required) ---
+    # gpt-5 и glm-5.1 переехали наверх (см. начало quality), оставлен только мини
+    - freetheai:gpt-5-mini               # 5.6s, claims ChatGPT (OpenAI)
+
+  # --- unlimited: провайдеры без RPD-кэпа (только RPM или вообще без лимитов) ---
+  # Полезно когда ожидается высокий суточный трафик — остальные цепочки упрутся в rpd:20/250/1000.
+  # Порядок: AA quality desc, RU как tiebreak.
+  unlimited:
+    - nvidia:qwen3.5-397b             # AA 40 · RU 92 · rpm 40
+    - gigachat:2                      # ~AA 30 · RU 90 · нет RPD/RPM
+    - mistral:large                   # AA 23 · RU 73 · rpm 4
+    - zai:glm-4.5-flash               # AA 20 · RU 43 · без лимитов
+    - nvidia:llama-3.3-70b            # AA 15 · RU 48 · rpm 40
+    - nvidia:nemotron-llama-49b       # AA 15 · RU 18 · rpm 40
+
+  # --- quota: бесплатные RU-провайдеры с ограниченной квотой (грант/PERS-tier) ---
+  # Yandex AI Studio — грант 6 000 ₽ до 22.10.2026 (общий с translate/art/vision).
+  # GigaChat PERS — 1M токенов на 30 дней per-account (общий пул на 2/2-pro/2-max).
+  # Использовать когда нужна сильная RU-генерация и unlimited-цепочка не тянет.
+  # Порядок: RU desc → quality → latency.
+  quota:
+    - yandex:alice                    # q35 · RU 90 · 0.8s · грант 6К ₽
+    - gigachat:2-max                  # q40 · RU 70 · 2.4s · 1M tok/мес
+    - gigachat:2-pro                  # q35 · RU 70 · 1.9s · общий пул
+    - gigachat:2                      # q30 · RU 60 · 1.6s · общий пул
+
+  # --- image: vision-capable провайдеры, порядок по точности описаний ---
+  # Тест 2026-04-21: 111.jpg (кот на скейте) + 222.jpg (Стич с лягушкой, Disney).
+  # Исключены: mistral:large (silent-ignore image_url, галлюцинирует — на 222.jpg
+  # ответил «Немо и Дори»), sambanova:llama-3.3-70b (слепая галлюцинация «кошка»),
+  # остальные text-only, все OR :free без vision endpoints, nvidia:qwen3.5-397b
+  # (TIMEOUT 90s), openrouter:claude-opus-4.7 (paid — вручную через `paid` chain).
+  image:
+    - sambanova:llama-4-maverick      # детальный, распознаёт водяные знаки (AVATARKO.RU)
+    - gemini:flash-lite-latest        # точный + контекст (3D-стиль, обои/аватарка), 14-18s
+    - github:gpt-4.1-mini             # точный, средней детальности, ~5s
+    - github:gpt-4o-mini              # точный, краткий, ~5s
+    - gemini:2.5-flash-lite           # точный + быстрый (1.7s)
+    - groq:llama-4-scout              # самый быстрый (0.8s), точный, иногда путает детали
+    - gemini:2.5-flash                # ⚠️ обрезается — thinking ест max_output_tokens
+    - gemini:flash-latest             # ⚠️ обрезается — thinking ест max_output_tokens
+    - openrouter:gemma-3-27b-free     # vision-capable, но upstream 429 (2/2 fail в тестах)
+    - openrouter:free-router          # last-resort lottery, кривая кириллица
+
+  # --- chat_en: английский чат, порядок по AA Intelligence Index v4.0 ---
+  # AA Index v4.0 — 10 английских бенчмарков (GDPval, τ²-Bench, SciCode, AA-LCR,
+  # AA-Omniscience, IFBench, HLE, GPQA, CritPt, MMLU-Pro) → это и есть EN-метрика.
+  # Тяжёлые reasoning (zai/glm-air 25+s) и nvidia:qwen3.5-397b (72s) опущены ниже
+  # несмотря на высокий AA — для chat важна латентность <20s в топе.
+  chat_en:
+    - gemini:flash-latest              # AA 46, reasoning, ~4s
+    - sambanova:deepseek-v3.2          # AA 46, ~3s
+    - openrouter:nemotron-3-super-free # AA 35, 20s — edge, но полезен когда нужно качество
+    - openrouter:minimax-m2.5-free     # AA ~35, reasoning, 196k ctx, ~9.5s
+    - gemini:flash-lite-latest         # AA 34, ~3s
+    - groq:gpt-oss-120b                # AA 33, English-centric, 1.3s
+    - openrouter:gpt-oss-120b-free     # AA 33, backup через OR
+    - cerebras:qwen-3-235b             # AA 30, 1.1s
+    - openrouter:ling-1t-free          # AA ~30, Ling 2.6 1T MoE, 262k ctx, 2.6s
+    - sambanova:deepseek-v3.1          # AA 28, ~3s
+    - groq:gpt-oss-20b                 # AA 25, English-centric, 0.7s
+    - pollinations:gpt-oss-20b         # AA 25, same model via OVH, ~4s, no-auth backup
+    - mistral:large                    # AA 23, multi-lang
+    - github:gpt-4.1-mini              # AA 23, GPT-4.1 — сильный EN chat
+    - github:deepseek-v3               # AA 22
+    - gemini:2.5-flash                 # AA 21, thinking-by-default
+    - openrouter:gemma-3-27b-free      # AA 20, Gemma 3 EN
+    - openrouter:ling-flash-free       # AA ~18, InclusionAI Ling, 262k ctx, 1.2s
+    - sambanova:llama-4-maverick       # AA 17, Llama 4
+    - groq:llama-4-scout               # AA 14, 0.9s
+    - groq:llama-3.3-70b               # AA 15, 2.2s
+    - sambanova:llama-3.3-70b          # AA 15, 5s
+    - nvidia:llama-3.3-70b             # AA 15
+    - github:llama-3.3-70b             # AA 15
+    - cloudflare:llama-3.3-70b-fp8-fast # AA 14
+    - gemini:2.5-flash-lite            # AA 13, 2.6s
+    - github:gpt-4o-mini               # AA 13
+    - cerebras:llama3.1-8b             # AA 12, 0.4s — fastest
+    - groq:llama-3.1-8b-instant        # AA 12, 0.7s
+    - nvidia:qwen3.5-397b              # AA 40, но 72s — последний резерв когда всё остальное упало
+    - zai:glm-4.5-flash                # AA 20, 25s reasoning — медленно для chat
+    - openrouter:glm-4.5-air-free      # AA 24, 98s reasoning — last-resort
+    - openrouter:free-router           # lottery
+    # --- 2026-05-02 estimates additions ---
+    - openrouter:hermes-3-405b-free      # AA 22 EN-tilt Hermes/L3.1-405B (slow, 429-flaky)
+    - openrouter:gemma-4-31b-free        # AA 25 NEW Gemma 4
+    - cohere:command-r-plus              # AA 22 EN-strong
+    - cohere:command-r                   # AA 18
+    - openrouter:qwen3-next-80b-free     # AA 24 (429-flaky)
+    - openrouter:gemma-4-26b-free        # AA 22 NEW MoE (429-flaky)
+    - openrouter:qwen3-coder-free        # AA 19 (429-flaky)
+    - openrouter:nemotron-3-nano-30b-free # AA 18 reasoning
+    - openrouter:nemotron-3-nano-omni-r-free # AA 18 reasoning multimodal
+    - openrouter:laguna-m.1:free         # AA 14 Poolside
+    - openrouter:gemma-3-12b-free        # AA 13
+    - openrouter:dolphin-venice-24b:free # AA 12 uncensored
+    - openrouter:gpt-oss-20b-free        # AA 11
+    - cohere:command-r7b                 # AA 10
+    - openrouter:llama-3.3-70b-free      # AA 15 (429-flaky)
+    - openrouter:llama-3.2-3b-free       # AA 8 (429-flaky)
+    - openrouter:gemma-3-4b-free         # AA 7
+    - openrouter:gemma-3n-e4b-free       # AA 6
+    - openrouter:gemma-3n-e2b-free       # AA 4
+    - openrouter:lfm-2.5-thinking:free   # AA 5 reasoning
+
+  # --- reasoning_quality: 9 подтверждённых thinking-моделей, порядок по AA Index v4.0 ---
+  # Когда нужен умный ответ на сложную задачу: порядок — от максимального качества к минимальному.
+  # Все провайдеры подтверждены через reasoning-детектор 2026-04-21 (thoughts/reasoning_tokens > 0).
+  reasoning_quality:
+    - gemini:flash-latest              # AA 46, thoughts=260
+    - openrouter:nemotron-3-super-free # AA 35, r_tok=58
+    - openrouter:minimax-m2.5-free     # AA ~35, r_tok=290-465 (reasoning, 2026-04-22)
+    - groq:gpt-oss-120b                # AA 33, r_tok=129 (быстрый — 0.7s)
+    - openrouter:gpt-oss-120b-free     # AA 33, r_tok=18 (backup через OR)
+    - groq:gpt-oss-20b                 # AA 25, r_tok=192
+    - pollinations:gpt-oss-20b         # AA 25, same GPT-OSS 20B Reasoning via OVH (no-auth backup)
+    - openrouter:glm-4.5-air-free      # AA 24, r_tok=302
+    - gemini:2.5-flash                 # AA 21, thoughts=743
+    - zai:glm-4.5-flash                # AA 20, r_tok=437 (самое глубокое thinking, но 25s)
+    - groq:qwen3-32b                   # AA 17, inline <think>, 716 tokens
+    # --- 2026-05-02 estimates additions (новые reasoning-модели) ---
+    - openrouter:nemotron-3-nano-omni-r-free # AA 18, reasoning + multimodal, 3.1s
+    - openrouter:nemotron-3-nano-30b-free    # AA 18, reasoning, 4.0s
+    - openrouter:lfm-2.5-thinking:free       # AA 5, tiny 1.2B reasoning — last-resort
+
+  # --- reasoning_deep: те же 9, порядок по глубине thinking (thoughts/reasoning_tokens на "корзина фруктов" 2026-04-21) ---
+  # Когда важен САМ факт длительного рассуждения (сложные многошаговые задачи, CoT-heavy).
+  # Первыми идут провайдеры, которые думают дольше/глубже — не обязательно дают лучший ответ.
+  reasoning_deep:
+    - gemini:2.5-flash                 # thoughts=743
+    - groq:qwen3-32b                   # inline <think>, 716 total tokens
+    - zai:glm-4.5-flash                # r_tok=437, r_content=1205ch
+    - openrouter:minimax-m2.5-free     # r_tok=290-465 avg ~378 (OpenInference, 2026-04-22)
+    - openrouter:glm-4.5-air-free      # r_tok=302, r_content=870ch
+    - gemini:flash-latest              # thoughts=260
+    - groq:gpt-oss-20b                 # r_tok=192, r_content=625ch
+    - pollinations:gpt-oss-20b         # reasoning-heavy backend (OVH) — видим reasoning_content в response
+    - groq:gpt-oss-120b                # r_tok=129, r_content=409ch
+    - openrouter:nemotron-3-super-free # r_tok=58, r_content=220ch
+    - openrouter:gpt-oss-120b-free     # r_tok=18 (легче чем groq-вариант — разные backends)
+
+  # --- web: провайдеры с подтверждённым веб-поиском (bench_web2.py 2026-04-21) ---
+  # Роутер при chain=web передаёт web_search=True, провайдер инжектит нативный tool:
+  #   - gemini → google_search (grounding_metadata с URL-цитатами)
+  #   - groq gpt-oss → browser_search (server-side Groq compound)
+  # OpenRouter :online-варианты исключены: Exa-поиск у OR стоит $4/1000 и требует
+  # PAID-ключа — правило «PAID только для Opus» (см. paid chain). Их определения
+  # в providers остались (не используются ни одной цепочкой), при необходимости
+  # можно собрать отдельную платную `web_paid` цепочку.
+  # Порядок: quality desc, latency tiebreak.
+  web:
+    - gemini:flash-latest                   # Gemini 3 Flash · AA 46 · 3.6s · google_search
+    - gemini:flash-lite-latest              # Gemini 3.1 FL · AA 34 · 3.6s · google_search
+    - groq:gpt-oss-120b                     # AA 33 · 1.3s · browser_search tool
+    - groq:gpt-oss-20b                      # AA 25 · 0.7s · browser_search tool
+    - gemini:2.5-flash-lite                 # AA 13 · 2s · google_search, последний резерв
+
+  # --- translation: перевод через /v1/translate — 4 dedicated MT + 1 LLM safety net ---
+  # Все 5 бесплатны permanent. Топ-4 — специализированные переводчики, 5-й —
+  # catastrophic fallback если первые 4 одновременно упали (реально — ~никогда).
+  # Если нужен LLM-перевод по контексту — использовать `model=<llm-name>` явно.
+  # Почему здесь нет остальных LLM-ов: цепочка была чищена 2026-04-24 после того как
+  # user заметил что 13 LLM-фоллбэков дают >0 ценности в normal flow — dedicated MT
+  # работают так надёжно что LLM-слой никогда не активируется.
+  translation:
+    - yandex:translate                 # Yandex Translate · 0.5s · RU 90 ★★★★★ · 1M chars/мес permanent
+    - cohere:aya-expanse-32b           # Cohere Aya Expanse 32B · 1.1s · RU 82 · 102 langs · 1K calls/мес permanent
+    - libretranslate:fedilab           # LibreTranslate fedilab-mirror · 0.5s · RU 70 · без ключа, unlimited
+    - mymemory:free                    # MyMemory TM · 1.1s · RU 74 · 5K chars/day anon permanent
+    # LLM safety net: бесплатные сначала, грант/Freemium-квота — последними.
+
+  # --- translate_adaptive: 4 проверенных провайдера + динамический порядок ---
+  # Бенч 2026-04-29 (3 сценария × 7 моделей). Из исходных 7 годятся 4:
+  #   yandex:translate    — 0.7s, чисто, иногда теряет имена
+  #   cohere:aya-expanse  — 5.7s, лучшее качество (включая арабский)
+  #   libretranslate      — 1.4s, приемлемо, арабский слабый
+  #   cerebras:qwen-3-235b — 2.8s, упал на турецком (1/3 fail) → fallback only
+  # Выкинуты: mymemory (502), gigachat (смешивает кириллицу), yandexgpt (отказ на религии).
+  #
+  # Адаптивный порядок (router.translate):
+  #   • если ru ∈ {source, target} → yandex:translate первым (быстрее и точнее на RU)
+  #   • иначе                       → cohere:aya-expanse-32b первым (лучшее качество)
+  # Остальные сохраняют порядок ниже как fallback.
+  translate_adaptive:
+    - yandex:translate
+    - cohere:aya-expanse-32b
+    - libretranslate:fedilab
+    - mymemory:free                    # MyMemory TM · 1.1s · RU 74 · 5K chars/day anon permanent
+
+  # --- paid: единственная платная модель через OpenRouter (для тестов и прочего не трогать без явного разрешения)---
+  paid:
+    - openrouter:claude-opus-4.7      # Anthropic Claude Opus 4.7 via OpenRouter (платная)
+    - openai:gpt-5-mini               # OpenAI gpt-5-mini · $0.25/$2.00 per 1M · $5 аккаунт
+
+  # --- audio: Speech-to-Text. Whisper на Groq (быстро, эталон RU) + Gemini multimodal last-resort ---
+  # Через /v1/audio/transcriptions (OpenAI-compat multipart). model=audio → цепочка.
+  # Groq Whisper — чисто транскрипция, не участвует в chat. Gemini — инжектит audio через
+  # inline_data в generate_content (медленнее, но делит квоту с chat-цепочкой).
+  audio:
+    - groq:whisper-large-v3-turbo      # 0.62s · RU 95 · default
+    - groq:whisper-large-v3            # 0.56s · RU 98 · чуть точнее, fallback
+    - gemini:flash-latest              # 3.4s · RU ~90 · last-resort через multimodal
+
+  # --- tts: Text-to-Speech через /v1/audio/speech ---
+  # Sync, возвращает raw audio bytes (audio/mpeg для mp3) как у OpenAI tts-1.
+  # На данный момент один провайдер — Edge TTS (безлимит, без ключа).
+  # Voice = `ru-RU-DmitryNeural` / `en-US-AriaNeural` / любой Edge voice name
+  # (или OpenAI-совместимые alloy/echo/fable/onyx/nova/shimmer → en-US map).
+  tts:
+    - edge:tts                         # безлимит, mp3-only, 400+ голосов
+
+  # --- sfx: Sound effects / ambient через /v1/audio/sfx ---
+  # Один провайдер — публичный HF Space artificialguybr/Stable-Audio-Open-Zero
+  # (gradio_client). Bottleneck — анонимная Zero-GPU квота ~1-2 вызова/день/IP;
+  # с HF_TOKEN (free) per-account и чуть выше, с PRO — практически снимается.
+  # Не путать с tts (синтез голоса) и audio (STT).
+  sfx:
+    - hfspace:stable-audio-open        # Stable Audio Open, до ~47с loop-able
+
+  # --- image_gen: text→image через /v1/images/generations ---
+  # Sync, возвращает {data:[{b64_json}|{url}]} как у OpenAI DALL-E.
+  # Порядок fallback (бенч 2026-04-22, 512×512):
+  #   1. Быстрые с независимыми пулами квот (Pollinations seed → CF)
+  #   2. Gemini (currently 429, но fail-fast 0.7s — оставлен на случай возврата free tier)
+  #   3. Медленные fallback (Pollinations flux/turbo, AI Horde — community-distributed)
+  # Исключены:
+  #   together:flux-schnell-free — signup credits исчерпаны (HTTP 402)
+  #   pollinations:kontext — требует enter.pollinations.ai tier
+  image_gen:
+    # Бенч 2026-04-26 (768×768, single-shot + 5-probe replay). Порядок: успешные
+    # провайдеры по возрастанию реальной латентности, всегда-фейлящие — в хвост.
+    # NB: Pollinations seed-tier (sana/flux/turbo) — все на одной общей очереди
+    # ~60-90с. Замеры 1.5s/58s в первом прогоне были попаданием в их prompt-кэш;
+    # 5-probe replay показал стабильные 89с на холодных промптах. Поэтому sana
+    # — после CF, не впереди.
+    - cloudflare:flux-1-schnell        # 2.7s · FLUX.1 schnell · CF 10K neurons/день
+    - cloudflare:sdxl-lightning        # 3.2s · SDXL Lightning · CF (общий пул neurons)
+    - cloudflare:phoenix               # 3.8s · Leonardo Phoenix 1.0 · CF (общий пул neurons)
+    - cloudflare:dreamshaper           # 5.0s · DreamShaper LCM · CF (общий пул neurons)
+    - yandex:art                       # 10.6s · YandexART · 2.24 ₽/img из гранта 6К (~2680 картинок)
+    - gigachat:kandinsky               # 14.9s · Kandinsky 3.1 через GigaChat (1-3K токенов из 1М PERS)
+    - pollinations:sana                # ~89s · Sana · pollinations seed queue (cache hit ~2s)
+    - pollinations:flux                # ~89s · FLUX · общая seed queue с sana/turbo
+    - pollinations:turbo               # ~89s · Z-Image Turbo 6B · общая seed queue
+    # ↓ FreeTheAi (⚠️ daily Discord /checkin required, +download для vhr/* URLs)
+    - freetheai_image:seedream_v4      # 15.5s · Bytedance Seedream v4 · vhr-proxy, b64-converted
+    - freetheai_image:flux_dev         # 17s · FLUX dev · vhr-proxy
+    - freetheai_image:gpt_image_2      # 21s · OpenAI gpt-image-2 native b64 (часто 429 от upstream)
+    - freetheai_image:nano_banana_2    # 22.7s · Nano Banana 2 · vhr-proxy
+    - freetheai_image:gpt_image_2_vhr  # 30.5s · gpt-image-2 через Vheer-прокси
+    # ↓ всегда-фейлящие, держим в хвосте на случай восстановления квот/кудосов
+    - gemini:nano-banana               # 429 fail-fast 2.5s (free tier limit=0 на 2026-04-26)
+    - aihorde:dreamshaper              # 403 на >648×648 (anonymous tier требует kudos)
+    - aihorde:flux-schnell             # >300s timeout · AI Horde Flux schnell community queue
+    - aihorde:sdxl                     # >300s timeout · AI Horde SDXL community queue
+
+  # --- image_edit: редактирование готовой картинки (b64-вход, b64-выход) ---
+  # На 2026-05-08 единственный поддерживающий провайдер во всём роутере —
+  # FreeTheAi с моделью img/gpt-image-2 (под капотом OpenAI gpt-image-2).
+  # Cloudflare/Yandex/GigaChat/Pollinations/Together/AIHorde — gen-only.
+  # ⚠️ FreeTheAi требует daily Discord /checkin и часто ловит 429 от общего пула.
+  image_edit:
+    - freetheai_image:gpt_image_2      # img/gpt-image-2 — b64 native ~650KB PNG
+
+  # --- moa: Mixture of Agents (Wang et al., 2024). Параллельный fan-out к УНИКАЛЬНЫМ моделям → aggregator синтезирует ---
+  # По одному провайдеру на каждое модельное семейство (самый быстрый/надёжный хостер).
+  # Дубликаты моделей исключены: groq:gpt-oss-120b предпочтён openrouter:gpt-oss-120b-free (1.3s vs 5.2s);
+  # groq:llama-3.3-70b предпочтён всем остальным хостерам llama-3.3 (2.2s vs 5-18s).
+  # Opus (paid) и openrouter:free-router (lottery/duplicate) НЕ включены.
+  # Aggregator по умолчанию — цепочка reasoning_quality (override: ?aggregator=<chain>).
+  # Название "moa" ≠ "swarm": swarm в строгом смысле — emergent coordination между агентами
+  # (как муравьи/пчёлы). MoA — иерархический ансамбль без inter-agent comm. Будущая цепочка
+  # debate добавит настоящее multi-agent взаимодействие.
+  moa:
+    - gemini:flash-latest              # Gemini 3 Flash · AA 46 · reasoning · 3.6s
+    - sambanova:deepseek-v3.2          # DeepSeek V3.2 · AA 46 (reasoning по AA) · 3.4s
+    - gigachat:2-max                   # GigaChat-2-Max · ~AA 40 · RU 93 · 2.4s · уникальная RU-native семья
+    - yandex:alice                 # YandexGPT Pro 5.x · ~AA 25 · RU 88 · 0.7s · уникальная RU-native (Yandex)
+    - nvidia:qwen3.5-397b              # Qwen 3.5 397B · AA 40 · RU 92 · 72s
+    - openrouter:nemotron-3-super-free # Nemotron 3 Super · AA 35 · reasoning · 20s
+    - openrouter:minimax-m2.5-free     # MiniMax M2.5 · AA ~35 · reasoning · 196k ctx · 9.5s
+    - gemini:flash-lite-latest         # Gemini 3.1 Flash Lite · AA 34 · 2.6s
+    - groq:gpt-oss-120b                # GPT-OSS 120B · AA 33 · reasoning · 1.3s
+    - cerebras:qwen-3-235b             # Qwen 3 235B · AA 30 · reasoning · 1.1s
+    - openrouter:ling-1t-free          # InclusionAI Ling 2.6 1T MoE · AA ~30 · 262k ctx · 2.6s
+    - sambanova:deepseek-v3.1          # DeepSeek V3.1 · AA 28 · 3.2s
+    - groq:gpt-oss-20b                 # GPT-OSS 20B · AA 25 · reasoning · 0.7s
+    - openrouter:glm-4.5-air-free      # GLM 4.5 Air · AA 24 · reasoning · 98s
+    - mistral:large                    # Mistral Large 3 · AA 23 · 11.9s
+    - github:gpt-4.1-mini              # GPT-4.1 mini · AA 23 · 5.4s
+    - github:deepseek-v3               # DeepSeek V3 (0324) · AA 22 · 4.6s
+    - gemini:2.5-flash                 # Gemini 2.5 Flash · AA 21 · reasoning · 3.5s
+    - openrouter:gemma-3-27b-free      # Gemma 3 27B · AA 20 · 3.1s
+    - zai:glm-4.5-flash                # GLM 4.5 Flash · AA 20 · reasoning · 74s
+    - openrouter:ling-flash-free       # InclusionAI Ling 2.6 · AA ~18 · 262k ctx · 1.2s
+    - groq:qwen3-32b                   # Qwen 3 32B · AA 17 · reasoning · 1.3s
+    - sambanova:llama-4-maverick       # Llama 4 Maverick · AA 17 · 1.6s
+    - nvidia:nemotron-llama-49b        # Nemotron Llama 49B · AA 15 · 27s
+    - groq:llama-3.3-70b               # Llama 3.3 70B (fastest host) · AA 15 · 2.2s
+    - groq:llama-4-scout               # Llama 4 Scout · AA 14 · 0.9s
+    - gemini:2.5-flash-lite            # Gemini 2.5 Flash Lite · AA 13 · 2.6s
+    - github:gpt-4o-mini               # GPT-4o mini · AA 13 · 3.9s
+    - cerebras:llama3.1-8b             # Llama 3.1 8B (fastest) · AA 12 · 0.4s
+
+  # --- sc: Self-Consistency (Wang et al., 2022). N сэмплов ОДНОЙ модели + aggregator ---
+  # Первый провайдер — base-модель, от которой берём N сэмплов (default N=5, override ?samples=N).
+  # Остальные — fallback если первая упала. При желании поменять base-модель:
+  # либо отредактируй порядок, либо ?base=<provider:name> в запросе.
+  # Aggregator по умолчанию — reasoning_quality (override: ?aggregator=<chain>).
+  sc:
+    - gemini:flash-latest              # base: AA 46, reasoning, 1M ctx, RPD 250 — хватит на 5× за раз
+    - sambanova:deepseek-v3.2          # fallback base: AA 46 reasoning, rpd 20 — маловато для samples=5
+    - groq:gpt-oss-120b                # fallback base: AA 33, reasoning, 30 RPM — ок для N=5
+
+  # --- debate: Multi-Agent Debate (Du et al. 2023, Liang et al. 2023) ---
+  # N разных моделей × R раундов inter-agent revision. Раунд 0: каждый агент
+  # отвечает независимо. Раунды 1..R-1: агент видит ответы коллег и переписывает
+  # свой с учётом критики. Финальный synth — aggregator (как в moa).
+  # Параметры: ?agents=N (2-6, default 3), ?rounds=R (1-4, default 2),
+  # ?aggregator=<chain> (default reasoning_quality).
+  # Берутся первые ?agents= eligible провайдеров — порядок задаёт состав. Идеал:
+  # разные семьи моделей для диверсификации. Пул покрывает 10 школ:
+  # Google · DeepSeek · Qwen (Alibaba) · OpenAI-OSS · Meta Llama · Mistral (EU) ·
+  # NVIDIA Nemotron · Cohere · Tencent Hunyuan · MiniMax. Длиннее ?agents= — fallback.
+  debate:
+    - gemini:flash-latest              # Google Gemini 3 Flash · AA 46 · reasoning · 3.6s
+    - sambanova:deepseek-v3.2          # DeepSeek V3.2 · AA 46 reasoning · 3.4s
+    - cerebras:qwen-3-235b             # Qwen 3 235B (Alibaba) · AA 30 · reasoning · 1.1s
+    - groq:gpt-oss-120b                # OpenAI GPT-OSS 120B · AA 33 · reasoning · 1.3s
+    - groq:llama-3.3-70b               # Meta Llama 3.3 70B · AA 15 · 2.2s · 1000 RPD
+    - mistral:large                    # Mistral Large 3 (EU) · AA 23 · 11.9s · rpm 4
+    - openrouter:nemotron-3-super-free # NVIDIA Nemotron 3 Super · AA 35 · reasoning · 20s
+    - cohere:aya-expanse-32b           # Cohere Aya 32B · multilingual · trial 1000/мес
+    - openrouter:hy3-preview:free      # Tencent Hunyuan 3 Preview 295B MoE · reasoning · free
+    - openrouter:minimax-m2.5-free     # MiniMax M2.5 · reasoning · free 1000 RPD
+
+  # --- deep_search: research-агент. Plan → Search × N → Synthesize → Critique → (доп. round если есть пробелы) ---
+  # Цепочка-плейсхолдер: реальная логика внутри deep_search.py использует разные
+  # цепочки для каждой роли:
+  #   Planner/Synthesizer/Critic → reasoning_quality (override: ?planner=, ?synth=, ?critic=)
+  #   Searcher → web (gemini:flash-latest с google_search + OR :online провайдеры)
+  # В /v1/models должна быть видна как "deep_search", поэтому один провайдер тут нужен.
+  deep_search:
+    - gemini:flash-latest              # placeholder: default synthesizer (реально резолвится через reasoning_quality)
+
+  # --- embed: текстовые embeddings через /v1/embeddings ---
+  # Voyage первым: 200M tok permanent на каждую модель — независимый от chat бакет,
+  # переживает любую индексацию. Gemini после Voyage — лучший RU, но shared 1500 RPD
+  # с chat-Gemini, поэтому не первый. Cloudflare bge-m3 last-resort: качество ниже,
+  # но 10K neurons/день переживёт всё что упало выше.
+  # Pass-through extras в запросе:
+  #   `dimensions: N` — MRL truncation (Voyage 256–2048, Jina v5/Gemini 768/1536/3072)
+  #   `task: retrieval.query|retrieval.passage` — Jina v3+
+  #   `input_type: search_query|search_document` — Cohere/Voyage
+  embed:
+    - voyage:voyage-3.5                # 1024d · 200M tok permanent · MTEB-multi top
+    - jina:embeddings-v5-text-small    # 1024d · 10M tok pool · 89 langs
+    - voyage:voyage-3-large            # 1024d · 200M tok · сильнее на сложных запросах
+    - voyage:voyage-3.5-lite           # 1024d · 200M tok · быстрее/дешевле
+    - cohere:embed-v4                  # 1536d · 1000/мес trial · SOTA mLLM
+    - gemini:embedding-001             # 3072d · 1500 RPD shared with chat — поэтому не первый
+    - cohere:embed-multilingual-v3     # 1024d · 1000/мес trial
+    - jina:embeddings-v3               # 1024d · backup если v5 затупит
+    - mistral:embed                    # 1024d · Experiment 1B shared с chat-Mistral
+    - github:text-embedding-3-large    # 3072d · Copilot-free, 50 RPD per-model
+    - github:text-embedding-3-small    # 1536d · 150 RPD per-model
+    - nvidia:nv-embedqa-e5-v5          # 1024d · 512 ctx (узкое горлышко) · NIM 1000 credits
+    - cloudflare:bge-m3                # 1024d · 10K neurons last-resort
+
+  # --- embed_code: код-embeddings через /v1/embeddings ---
+  # Voyage code-3 — SOTA на code-search (MTEB-Code 2025). Jina 1.5b новейший
+  # (декабрь 2025). Codestral третьим — shared с chat-Mistral, не выжигает отдельный
+  # бакет. v2-base-code — last-resort, проверенный с 2024.
+  embed_code:
+    - voyage:voyage-code-3             # 1024d · 200M tok permanent · MTEB-Code SOTA
+    - jina:code-embeddings-1.5b        # 1536d · 10M tok pool · новейший
+    - mistral:codestral-embed          # 1536d · Experiment shared
+    - jina:embeddings-v2-base-code     # 768d · last-resort
+
+  # --- rerank: cross-encoder поверх top-N от embed (второй этап RAG) ---
+  # Jina v3 первым: SOTA multilingual + 131K ctx + 10M tok pool (тот же что Reader/embed).
+  # Cohere v3.5 вторым — SOTA на EN, но 1000/мес trial-bucket → не выжигаем сразу.
+  # Voyage 2.5 третьим: 200M tok permanent независимый бакет, 32K ctx (длинные доки).
+  # Jina v2 / Voyage lite — последние fallback'и.
+  # Pass-through extras в запросе:
+  #   `top_n: N` (Voyage = top_k, нормализуется автоматически)
+  #   `return_documents: true` — вернуть text оригинальных документов
+  rerank:
+    - jina:reranker-v3                 # 88 · 131K ctx · 10M tok pool · multilingual SOTA
+    - cohere:rerank-v3.5               # 85 · 4K ctx · 1000/мес trial · RU 90
+    - voyage:rerank-2.5                # 80 · 32K ctx · 200M tok permanent
+    - jina:reranker-v2-base-multilingual  # 78 · 8K ctx · backup v2
+    - voyage:rerank-2.5-lite           # 70 · last-resort
+
+  # --- moderation: text-only через /v1/moderations ---
+  # OpenAI omni первый — единственный с native scores и 13 категорий, бесплатно навсегда.
+  # Mistral второй — multilingual native scores, RU 80. Cloudflare Llama Guard 3-8B
+  # последний independent-pool fallback (10K neurons/день).
+  # Together-провайдеры в config есть, но не в default chain: на 2026-04-25 их
+  # ключ user'а упёрся в 402 credit_limit. Раскомментируй когда credits появятся.
+  moderation:
+    - openai:moderation                # 13 cats + scores · 0.4s · multimodal · permanent free
+    - mistral:moderation               # 9 cats + scores · 0.5s · RU 80
+    - openai:text-moderation           # 7 cats · 0.3s · legacy text-only · permanent free
+    - cloudflare:llama-guard-3-8b      # 0.8s · 10K neurons/день · text-only S-codes
+
+  # --- moderation_image: только мультимодальные классификаторы ---
+  # OpenAI omni-moderation = единственный реально работающий multimodal slot
+  # для текущих ключей user'а. Together Llama Guard 4 multimodal закомментирован
+  # (нужны Together credits).
+  moderation_image:
+    - openai:moderation                # SOTA, native scores, 13 cats, multimodal
+    # - together:llama-guard-4         # раскомментировать когда у Together будут credits
+
+  # --- moderation_jailbreak: prompt-injection / jailbreak detection ---
+  # Prompt Guard 2 86M — узкий специалист (бинарный verdict). OpenAI omni и
+  # Mistral как safety net на случай редких EN-bypass'ов которые prompt-guard
+  # пропустит. Groq Llama-Guard-4 decommissioned 2026-04, заменён prompt-guard-2.
+  moderation_jailbreak:
+    - groq:prompt-guard-2-86m          # 0.4s · EN, narrow prompt-injection detector
+    - openai:moderation                # widely-trained safety net (13 cats)
+    - mistral:moderation               # dangerous_and_criminal_content / pii fallback
+
+  # --- moderation_ru: RU/AR-критичные домены (KSA-compliance, Sber-сценарии) ---
+  # Mistral первый (RU 80, native scores), OpenAI вторым (multilingual, RU 85),
+  # CF Llama Guard 3-8B как backup. Qwen3-Guard на Together (RU 85) — закомментирован
+  # пока нет credits.
+  moderation_ru:
+    - mistral:moderation               # RU 80 · native scores · 9 cats
+    - openai:moderation                # RU 85 · 13 cats · multimodal
+    - cloudflare:llama-guard-3-8b      # RU 60 · backup, S-codes
+    # - together:qwen3-guard           # RU 85 · 100+ языков (нужны Together credits)
+

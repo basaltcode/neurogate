@@ -1,0 +1,3339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>neurogate · дашборд</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230e1116'/%3E%3Cpath d='M16 44V20h6v18h14v6zm24 0V20h6v24zM32 14a4 4 0 110 8 4 4 0 010-8z' fill='%2358a6ff'/%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --panel-2: #1c2230;
+    --border: #2a313c;
+    --fg: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --good: #3fb950;
+    --warn: #d29922;
+    --bad: #f85149;
+    --hyper: #bf7af0;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 14px; line-height: 1.4;
+  }
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .header-inner {
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 20px;
+    max-width: 1400px; margin: 0 auto;
+  }
+  header h1 {
+    font-size: 17px; margin: 0;
+    font-weight: 600; letter-spacing: 0.3px;
+  }
+  header .default {
+    color: var(--muted); font-family: var(--mono); font-size: 12px;
+  }
+  header .default b { color: var(--accent); }
+  header .spacer { flex: 1; }
+  header button {
+    background: var(--panel-2); color: var(--fg);
+    border: 1px solid var(--border);
+    padding: 6px 12px; border-radius: 6px;
+    font-size: 13px; cursor: pointer;
+  }
+  header button:hover { background: #242b38; }
+  header .status {
+    color: var(--muted); font-size: 12px; font-family: var(--mono);
+  }
+
+  main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+
+  /* Providers view: sticky sidebar with grouped chains + cards grid on the right.
+     Заменили горизонтальный tab-стрип — на 19 цепочек он не помещался по ширине,
+     приходилось скроллить и часть всегда была за кадром. Группировка по семантике
+     (chat / reasoning / image / audio / web / paid) делает выбор предсказуемым. */
+  .providers-layout {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  .providers-sidebar {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px;
+    position: sticky;
+    top: 70px;
+    max-height: calc(100vh - 90px);
+    overflow-y: auto;
+  }
+  .sidebar-group { margin-bottom: 8px; }
+  .sidebar-group:last-child { margin-bottom: 0; }
+  .sidebar-group .group-label {
+    font-size: 10px; font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.6px;
+    padding: 8px 10px 4px;
+  }
+  .sidebar-item {
+    display: flex; align-items: center; gap: 6px;
+    width: 100%;
+    background: transparent; color: var(--fg);
+    border: none; border-radius: 4px;
+    padding: 6px 10px;
+    font-family: var(--mono); font-size: 12px; font-weight: 500;
+    cursor: pointer; text-align: left;
+  }
+  .sidebar-item:hover { background: var(--panel-2); }
+  .sidebar-item.active {
+    background: var(--panel-2); color: var(--accent);
+  }
+  .sidebar-item .name {
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .sidebar-item .tag {
+    font-size: 9px; font-weight: 500;
+    padding: 1px 5px; border-radius: 8px;
+    background: rgba(88, 166, 255, 0.15); color: var(--accent);
+  }
+  .sidebar-item .count {
+    color: var(--muted); font-weight: 400; font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .sidebar-item.active .count { color: var(--fg); opacity: 0.7; }
+
+  @media (max-width: 900px) {
+    .providers-layout { grid-template-columns: 1fr; }
+    .providers-sidebar {
+      position: static;
+      max-height: none;
+    }
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 10px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .card.capped { border-color: rgba(248, 81, 73, 0.5); }
+  .card .head {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .card .rank {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 24px; height: 24px; padding: 0 6px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 12px;
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+  }
+  .card .provider {
+    font-family: var(--mono); font-size: 13px; font-weight: 600;
+    word-break: break-all;
+  }
+  .card .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted);
+  }
+  .card .dot.good { background: var(--good); }
+  .card .dot.warn { background: var(--warn); }
+  .card .dot.bad { background: var(--bad); }
+  .card .head .spacer { flex: 1; }
+
+  /* IQ chip: квалити-индекс 0-100 из config.yaml. Цвет по диапазону. */
+  .card .iq {
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    min-width: 28px; padding: 2px 6px; border-radius: 4px;
+    text-align: center;
+    background: var(--panel-2); color: var(--fg);
+    flex-shrink: 0; cursor: help;
+  }
+  .card .iq.iq-top    { color: var(--hyper); }
+  .card .iq.iq-strong { color: var(--accent); }
+  .card .iq.iq-mid    { color: #9ca5ae; }
+  .card .iq.iq-low    { color: var(--warn); }
+  .card .iq.iq-na     { color: var(--muted); }
+
+  /* Brain chip: reasoning-capable models (thinks before answering — burns extra tokens, slower) */
+  .card .brain {
+    font-size: 13px; line-height: 1;
+    flex-shrink: 0; cursor: help;
+    filter: saturate(1.2);
+  }
+
+  /* Vision chip: models that accept image_url input. Derived from membership in `image` chain. */
+  .card .vision {
+    font-size: 13px; line-height: 1;
+    flex-shrink: 0; cursor: help;
+    filter: saturate(1.2);
+  }
+
+  /* Web chip: models with native web-search (gemini google_search, groq browser_search,
+     or OpenRouter :online). Derived from membership in `web` chain. */
+  .card .web {
+    font-size: 13px; line-height: 1;
+    flex-shrink: 0; cursor: help;
+    filter: saturate(1.2);
+  }
+
+  /* Audio chip: speech-to-text capable. Derived from membership in `audio` chain. */
+  .card .audio {
+    font-size: 13px; line-height: 1;
+    flex-shrink: 0; cursor: help;
+    filter: saturate(1.2);
+  }
+
+  /* No-text chip: transcription-only провайдер (Whisper). Присутствует только в
+     цепочке `audio` и не умеет /chat/completions — перечёркнутый «чат». */
+  .card .notext {
+    position: relative; display: inline-block;
+    font-size: 13px; line-height: 1;
+    flex-shrink: 0; cursor: help;
+    filter: saturate(1.2);
+  }
+  .card .notext::after {
+    content: ""; position: absolute;
+    left: -1px; right: -1px; top: 50%;
+    border-top: 2px solid #e05560;
+    transform: rotate(-18deg);
+    pointer-events: none;
+  }
+
+  /* RU chip: RU-Quality 0-100. Outlined-пилюля с бирюзовым акцентом —
+     визуально отделено от IQ-чипа (заливка vs обводка) и не пересекается
+     с палитрой quality (hyper/accent/warn). Префикс «ру» подписывает метрику.
+     Красный — только для совсем сломанного RU (<20, явные ошибки языка/физики). */
+  .card .ru {
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    padding: 1px 6px; border-radius: 10px;
+    background: transparent;
+    border: 1px solid #3a6d77;
+    color: #6fd4cd;
+    flex-shrink: 0; cursor: help;
+    display: inline-flex; align-items: baseline; gap: 3px;
+  }
+  .card .ru .pfx {
+    font-size: 9px; font-weight: 500;
+    color: var(--muted);
+    letter-spacing: 0.4px;
+  }
+  .card .ru.ru-bad { color: var(--bad); border-color: rgba(248,81,73,0.5); }
+  .card .ru.ru-na  { color: var(--muted); border-color: var(--border); }
+
+  /* Signal-bars для RPD-тира в правом верхнем. 1=дефицит … 4=массовое,
+     hyper=5-й бар вне шкалы (без RPD, только RPM/concurrency). */
+  .tier {
+    display: inline-flex; align-items: flex-end; gap: 2px;
+    height: 16px; flex-shrink: 0;
+    cursor: help;
+  }
+  .tier .b {
+    width: 3px; border-radius: 1px;
+    background: var(--muted); opacity: 0.25;
+  }
+  .tier .b.b1 { height: 4px; }
+  .tier .b.b2 { height: 7px; }
+  .tier .b.b3 { height: 10px; }
+  .tier .b.b4 { height: 13px; }
+  .tier .b.b5 { height: 16px; }
+  .tier .b.on { background: var(--fg); opacity: 1; }
+  .tier.tier-1 .b.on { background: var(--bad); }
+  .tier.tier-2 .b.on { background: var(--warn); }
+  .tier.tier-3 .b.on { background: var(--accent); }
+  .tier.tier-4 .b.on { background: var(--good); }
+  .tier.tier-hyper .b.on {
+    background: var(--hyper);
+    box-shadow: 0 0 4px var(--hyper), 0 0 1px var(--hyper);
+  }
+  .tier.tier-hyper .b.b5.on {
+    background: linear-gradient(to top, var(--hyper), #e2a4ff);
+  }
+
+  .limit {
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .limit .label {
+    display: flex; justify-content: space-between;
+    font-size: 11px; color: var(--muted); font-family: var(--mono);
+  }
+  .limit .bar {
+    height: 6px; background: var(--panel-2);
+    border-radius: 3px; overflow: hidden;
+  }
+  .limit .bar .fill {
+    height: 100%; background: var(--good);
+    transition: width 0.3s ease;
+  }
+  .limit .bar .fill.warn { background: var(--warn); }
+  .limit .bar .fill.bad { background: var(--bad); }
+  .limit.uncapped .bar .fill { background: var(--muted); width: 0; }
+  .limit .reset {
+    font-size: 10px; color: var(--muted); font-family: var(--mono);
+    margin-top: 1px;
+  }
+
+  .outcomes {
+    display: flex; flex-wrap: wrap; gap: 4px 8px;
+    font-family: var(--mono); font-size: 11px;
+    margin-top: auto;  /* прибить к футеру: свободное место в карточке
+                          (когда RPM-бара нет) копится над .outcomes, а не между ней и .foot. */
+  }
+  .outcomes .o {
+    display: inline-flex; align-items: baseline; gap: 4px;
+    padding: 2px 6px; border-radius: 4px;
+    background: var(--panel-2);
+  }
+  .outcomes .o .k { color: var(--muted); }
+  .outcomes .o .v { color: var(--fg); font-weight: 600; }
+  .outcomes .o.success { background: rgba(63, 185, 80, 0.12); }
+  .outcomes .o.success .k { color: var(--good); }
+  .outcomes .o.rate_limit, .outcomes .o.server_error,
+  .outcomes .o.timeout, .outcomes .o.decommissioned,
+  .outcomes .o.context_exceeded, .outcomes .o.empty,
+  .outcomes .o.other {
+    background: rgba(248, 81, 73, 0.1);
+  }
+  .outcomes .o.rate_limit .k, .outcomes .o.server_error .k,
+  .outcomes .o.timeout .k, .outcomes .o.decommissioned .k,
+  .outcomes .o.context_exceeded .k, .outcomes .o.empty .k,
+  .outcomes .o.other .k {
+    color: var(--bad);
+  }
+  .outcomes .none { color: var(--muted); font-style: italic; }
+
+  .foot {
+    display: flex; justify-content: space-between; gap: 10px;
+    font-size: 11px; color: var(--muted); font-family: var(--mono);
+    border-top: 1px solid var(--border); padding-top: 8px;
+  }
+
+  .total-rpd {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    display: flex; align-items: center; gap: 18px;
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+  }
+  .total-rpd .title {
+    color: var(--fg); font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px;
+    white-space: nowrap;
+  }
+  .total-rpd .val { white-space: nowrap; }
+  .total-rpd .bar {
+    flex: 1; min-width: 80px;
+    height: 8px; background: var(--panel-2);
+    border-radius: 4px; overflow: hidden;
+  }
+  .total-rpd .bar .fill {
+    height: 100%; background: var(--good);
+    transition: width 0.3s ease;
+  }
+  .total-rpd .bar .fill.warn { background: var(--warn); }
+  .total-rpd .bar .fill.bad { background: var(--bad); }
+
+  dialog {
+    background: var(--panel); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 20px; max-width: 400px; min-width: 300px;
+  }
+  dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+  dialog h3 { margin: 0 0 10px; font-size: 15px; }
+  dialog p { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+  dialog input {
+    width: 100%; padding: 8px 10px;
+    background: var(--bg); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 6px;
+    font-family: var(--mono); font-size: 13px;
+    margin-bottom: 12px;
+  }
+  dialog .row { display: flex; justify-content: flex-end; gap: 8px; }
+  dialog button {
+    background: var(--panel-2); color: var(--fg);
+    border: 1px solid var(--border);
+    padding: 6px 14px; border-radius: 6px;
+    font-size: 13px; cursor: pointer;
+  }
+  dialog button.primary { background: var(--accent); color: #000; border-color: var(--accent); }
+
+  .empty {
+    text-align: center; color: var(--muted);
+    padding: 40px; font-size: 14px;
+  }
+  .error-banner {
+    background: rgba(248, 81, 73, 0.15); color: var(--bad);
+    border: 1px solid rgba(248, 81, 73, 0.4);
+    padding: 10px 14px; border-radius: 6px;
+    margin-bottom: 16px; font-family: var(--mono); font-size: 12px;
+  }
+
+  /* Top-level nav: Providers / Audit / Chat. Жмётся в одну строку с
+     блоком "дневной лимит суммарно", чтобы заголовок дашборда был компактным. */
+  .top-row {
+    display: flex; align-items: stretch; gap: 12px;
+    margin-bottom: 18px;
+  }
+  .nav {
+    display: flex; gap: 2px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 4px;
+    width: fit-content; flex-shrink: 0;
+  }
+  #total-rpd-slot { flex: 1; min-width: 0; display: flex; }
+  #total-rpd-slot:empty { display: none; }
+  #total-rpd-slot > .total-rpd { flex: 1; margin-bottom: 0; }
+  #chains-edit-slot { display: flex; align-items: center; flex-shrink: 0; }
+  #chains-edit-slot:empty { display: none; }
+  .nav-tab {
+    background: transparent; color: var(--muted);
+    border: none; border-radius: 6px;
+    padding: 8px 16px; font-size: 13px; font-weight: 500;
+    cursor: pointer; font-family: inherit;
+  }
+  .nav-tab:hover { color: var(--fg); }
+  .nav-tab.active { background: var(--panel-2); color: var(--accent); }
+
+  .basalt-badge {
+    flex-shrink: 0; display: inline-flex; align-items: center;
+    opacity: 0.75; transition: opacity 120ms;
+  }
+  .basalt-badge:hover { opacity: 1; }
+  .basalt-badge img { height: 30px; width: auto; display: block; }
+
+  /* Calls view: real inbound API calls — endpoint, chain, provider, latency, tokens. */
+  .calls-summary {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px; margin-bottom: 16px;
+  }
+  .calls-summary .summary-card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px;
+  }
+  .calls-summary .summary-card .label {
+    color: var(--muted); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 6px;
+  }
+  .calls-summary .summary-card .value {
+    font-family: var(--mono); font-size: 18px; font-weight: 600;
+  }
+  .calls-summary .summary-card .sub {
+    color: var(--muted); font-size: 11px; margin-top: 4px;
+    font-family: var(--mono);
+  }
+  .calls-filters {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
+    align-items: center;
+  }
+  .calls-filters select, .calls-filters input {
+    background: var(--panel); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; font-size: 12px; font-family: var(--mono);
+  }
+  .calls-filters .meta {
+    color: var(--muted); font-size: 11px; font-family: var(--mono);
+    margin-left: auto;
+  }
+  .calls-table-wrap {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; overflow: auto; max-height: 70vh;
+  }
+  table.calls {
+    width: 100%; border-collapse: collapse; font-size: 12px;
+    font-family: var(--mono);
+  }
+  table.calls th, table.calls td {
+    padding: 6px 10px; text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap; vertical-align: top;
+  }
+  table.calls th {
+    position: sticky; top: 0; background: var(--panel-2);
+    color: var(--muted); font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.4px; z-index: 1;
+  }
+  table.calls tr.row-error { background: rgba(248, 81, 73, 0.06); }
+  table.calls tr.row-cancelled { background: rgba(255, 184, 0, 0.05); }
+  table.calls td.col-when { color: var(--muted); }
+  table.calls td.col-endpoint .pill {
+    display: inline-block; padding: 1px 6px; border-radius: 4px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  table.calls td.col-outcome .pill {
+    display: inline-block; padding: 1px 6px; border-radius: 4px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  table.calls td.col-outcome .pill.success { background: rgba(46, 160, 67, 0.18); color: var(--good, #3fb950); }
+  table.calls td.col-outcome .pill.error { background: rgba(248, 81, 73, 0.20); color: var(--bad, #f85149); }
+  table.calls td.col-outcome .pill.cancelled { background: rgba(255, 184, 0, 0.18); color: #d29922; }
+  table.calls td.col-tokens { color: var(--muted); }
+  table.calls td.col-tokens b { color: var(--fg); font-weight: 600; }
+  table.calls td.col-extra { white-space: normal; max-width: 320px; color: var(--muted); font-size: 11px; }
+  table.calls td.col-error { white-space: normal; max-width: 360px; color: var(--bad, #f85149); font-size: 11px; }
+  table.calls td.col-dur { text-align: right; }
+  table.calls td.col-dur.slow { color: var(--bad, #f85149); }
+  table.calls td.col-dur.warn { color: #d29922; }
+
+  /* Audit view */
+  .audit-layout {
+    display: grid; grid-template-columns: 240px 1fr;
+    gap: 16px; min-height: 400px;
+  }
+  .audit-sidebar {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px;
+    max-height: 75vh; overflow-y: auto;
+  }
+  .audit-sidebar .hd {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 8px 10px; border-bottom: 1px solid var(--border);
+    margin-bottom: 6px;
+  }
+  .audit-sidebar .hd .title {
+    font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .audit-sidebar button.run {
+    background: var(--accent); color: #000; border: none;
+    padding: 4px 10px; border-radius: 4px; font-size: 11px;
+    cursor: pointer; font-weight: 600;
+  }
+  .audit-sidebar button.run:hover { opacity: 0.85; }
+  .audit-sidebar button.run:disabled { opacity: 0.5; cursor: not-allowed; }
+  .audit-chain-row select {
+    flex: 1; background: var(--bg); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 3px 6px; font-family: var(--mono); font-size: 11px;
+    min-width: 0;
+  }
+  .audit-chain-row label { width: 100%; }
+  .audit-list { display: flex; flex-direction: column; gap: 2px; }
+  .audit-item {
+    background: transparent; color: var(--fg);
+    border: none; text-align: left;
+    padding: 8px 10px; border-radius: 4px;
+    font-family: var(--mono); font-size: 12px;
+    cursor: pointer;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .audit-item:hover { background: var(--panel-2); }
+  .audit-item.active { background: var(--panel-2); color: var(--accent); }
+  .audit-item .ts { color: var(--muted); font-size: 10px; }
+  .audit-body {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 20px 24px;
+    overflow-y: auto; max-height: 75vh;
+  }
+  .audit-body h1, .audit-body h2, .audit-body h3 {
+    margin-top: 20px; margin-bottom: 10px; color: var(--fg);
+  }
+  .audit-body h1 { font-size: 18px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  .audit-body h2 { font-size: 16px; color: var(--accent); }
+  .audit-body h3 { font-size: 14px; color: var(--fg); }
+  .audit-body p { margin: 8px 0; }
+  .audit-body ul, .audit-body ol { margin: 8px 0; padding-left: 24px; }
+  .audit-body li { margin: 4px 0; }
+  .audit-body code {
+    background: var(--panel-2); padding: 1px 5px; border-radius: 3px;
+    font-family: var(--mono); font-size: 12px;
+  }
+  .audit-body pre {
+    background: var(--panel-2); padding: 10px; border-radius: 6px;
+    overflow-x: auto; font-family: var(--mono); font-size: 12px;
+  }
+  .audit-body pre code { background: transparent; padding: 0; }
+  .audit-body strong { color: var(--fg); font-weight: 600; }
+  .audit-body hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+  .audit-body em { color: var(--muted); font-style: italic; }
+  .audit-body a { color: var(--accent); text-decoration: none; }
+  .audit-body a:hover { text-decoration: underline; }
+
+  /* Audit diff mode: line-based unified diff, colored by add/remove */
+  .audit-body .diff-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 10px; margin-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+  }
+  .audit-body .diff-head .vs { color: var(--fg); }
+  .audit-body .diff-head .vs b { color: var(--accent); }
+  .audit-body .diff {
+    font-family: var(--mono); font-size: 12px;
+    background: var(--panel-2); border-radius: 6px;
+    padding: 10px 12px; white-space: pre-wrap; word-break: break-word;
+    line-height: 1.5;
+  }
+  .audit-body .diff .ln { display: block; padding: 0 4px; border-radius: 2px; }
+  .audit-body .diff .add { background: rgba(63,185,80,0.15); color: #9bdb9f; }
+  .audit-body .diff .rem { background: rgba(248,81,73,0.15); color: #f8a095; text-decoration: line-through; text-decoration-color: rgba(248,81,73,0.4); }
+  .audit-body .diff .ctx { color: var(--muted); }
+  .audit-body .diff-empty { color: var(--muted); font-style: italic; padding: 16px; text-align: center; }
+  .audit-body .diff-toggle {
+    background: var(--panel-2); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 3px 10px; font-size: 11px; font-family: var(--mono);
+    cursor: pointer;
+  }
+  .audit-body .diff-toggle:hover { border-color: var(--accent); }
+  .audit-body .diff-toggle.on { background: var(--accent); color: #000; border-color: var(--accent); }
+
+  /* Chat view */
+  .chat-layout {
+    display: grid; grid-template-rows: auto 1fr auto;
+    gap: 14px; max-width: 900px; margin: 0 auto;
+    min-height: 60vh;
+  }
+  .chat-config {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px;
+    display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  }
+  .chat-config label {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--muted); font-family: var(--mono);
+  }
+  .chat-config select, .chat-config input[type="number"] {
+    background: var(--bg); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; font-family: var(--mono); font-size: 12px;
+  }
+  .chat-config select { min-width: 220px; }
+  .chat-messages {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px;
+    display: flex; flex-direction: column; gap: 12px;
+    overflow-y: auto; max-height: 60vh; min-height: 200px;
+  }
+  .chat-msg { display: flex; flex-direction: column; gap: 4px; }
+  .chat-msg .who {
+    font-size: 11px; color: var(--muted);
+    font-family: var(--mono); text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .chat-msg .who .prov {
+    color: var(--accent); text-transform: none; margin-left: 6px;
+  }
+  .chat-msg .body {
+    background: var(--panel-2); padding: 10px 12px; border-radius: 6px;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .chat-msg .body.md { white-space: normal; }
+  .chat-msg .body.md > :first-child { margin-top: 0; }
+  .chat-msg .body.md > :last-child { margin-bottom: 0; }
+  .chat-msg .body.md p { margin: 0 0 8px; }
+  .chat-msg .body.md h1,
+  .chat-msg .body.md h2,
+  .chat-msg .body.md h3 {
+    margin: 12px 0 6px; line-height: 1.25;
+  }
+  .chat-msg .body.md h1 { font-size: 18px; }
+  .chat-msg .body.md h2 { font-size: 16px; }
+  .chat-msg .body.md h3 { font-size: 14px; }
+  .chat-msg .body.md ul,
+  .chat-msg .body.md ol { margin: 4px 0 8px; padding-left: 22px; }
+  .chat-msg .body.md li { margin: 2px 0; }
+  .chat-msg .body.md code {
+    background: rgba(255,255,255,0.06); padding: 1px 5px;
+    border-radius: 4px; font-family: var(--mono); font-size: 12px;
+  }
+  .chat-msg .body.md pre {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 12px; margin: 8px 0;
+    overflow-x: auto;
+  }
+  .chat-msg .body.md pre code { background: transparent; padding: 0; }
+  .chat-msg .body.md hr {
+    border: 0; border-top: 1px solid var(--border); margin: 12px 0;
+  }
+  .chat-msg .body.md a { color: var(--accent); }
+  .chat-msg .body.md table {
+    border-collapse: collapse; margin: 8px 0; width: 100%;
+    font-size: 13px;
+  }
+  .chat-msg .body.md th,
+  .chat-msg .body.md td {
+    border: 1px solid var(--border); padding: 6px 10px;
+    text-align: left; vertical-align: top;
+  }
+  .chat-msg .body.md th {
+    background: var(--panel); font-weight: 600;
+  }
+  .chat-msg.user .body {
+    background: rgba(88, 166, 255, 0.1);
+    border: 1px solid rgba(88, 166, 255, 0.25);
+  }
+  .chat-msg.err .body {
+    background: rgba(248, 81, 73, 0.1);
+    border: 1px solid rgba(248, 81, 73, 0.3);
+    color: var(--bad);
+  }
+  /* Thinking block: reasoning_content / <think>. Collapsed by default, muted. */
+  .chat-msg .thinking {
+    background: transparent;
+    border: 1px dashed rgba(168, 140, 255, 0.35);
+    border-radius: 6px;
+    padding: 0;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .chat-msg .thinking summary {
+    cursor: pointer;
+    padding: 6px 10px;
+    font-family: var(--mono); font-size: 11px;
+    color: var(--hyper);
+    user-select: none;
+    list-style: none;
+  }
+  .chat-msg .thinking summary::-webkit-details-marker { display: none; }
+  .chat-msg .thinking summary::before {
+    content: "▸ ";
+    color: var(--muted);
+  }
+  .chat-msg .thinking[open] summary::before { content: "▾ "; }
+  .chat-msg .thinking .inner {
+    padding: 0 12px 10px;
+    white-space: pre-wrap; word-break: break-word;
+    font-style: italic;
+    opacity: 0.85;
+  }
+  /* MoA proposals: развёртываемый список ответов всех proposer-ов под синтезом */
+  .chat-msg .proposals {
+    background: transparent;
+    border: 1px dashed rgba(126, 231, 135, 0.3);
+    border-radius: 6px;
+    font-size: 12px;
+  }
+  .chat-msg .proposals summary {
+    cursor: pointer;
+    padding: 6px 10px;
+    font-family: var(--mono); font-size: 11px;
+    color: var(--good);
+    user-select: none;
+    list-style: none;
+  }
+  .chat-msg .proposals summary::-webkit-details-marker { display: none; }
+  .chat-msg .proposals summary::before { content: "▸ "; color: var(--muted); }
+  .chat-msg .proposals[open] summary::before { content: "▾ "; }
+  .chat-msg .proposals-body {
+    padding: 0 12px 10px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .chat-msg .proposal {
+    background: var(--panel-2); border-radius: 6px;
+    padding: 8px 10px;
+  }
+  .chat-msg .proposal .phead {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: var(--mono); font-size: 11px; color: var(--accent);
+    margin-bottom: 4px;
+  }
+  .chat-msg .proposal .pmeta { color: var(--muted); font-size: 10px; }
+  .chat-msg .proposal .pbody {
+    white-space: pre-wrap; word-break: break-word;
+    color: var(--fg); opacity: 0.9; font-size: 13px;
+  }
+  .chat-msg .proposal-failed {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    padding: 2px 4px;
+  }
+  /* Deep Search trace block: отдельная раскладка внутри .proposals-body */
+  .chat-msg .ds-body b { color: var(--accent); }
+  .chat-msg .ds-body ol, .chat-msg .ds-body ul {
+    margin: 4px 0 10px 18px; padding: 0;
+  }
+  .chat-msg .ds-body li {
+    margin: 2px 0; font-size: 12px; line-height: 1.5;
+  }
+  .chat-msg .ds-trace li { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .chat-msg .ds-trace b { color: var(--good); }
+  .chat-msg .ds-trace .prov { color: var(--accent); }
+  .chat-msg .ds-sources a {
+    color: var(--hyper); text-decoration: none;
+    font-family: var(--mono); font-size: 11px;
+    word-break: break-all;
+  }
+  .chat-msg .ds-sources a:hover { text-decoration: underline; }
+  .chat-msg .ds-sources .pmeta { color: var(--muted); font-size: 10px; }
+  /* Debate chat-style transcript */
+  .dbg-msg { display: flex; gap: 10px; margin: 10px 0; align-items: flex-start; }
+  .dbg-msg.dbg-user { flex-direction: row-reverse; }
+  .dbg-msg.dbg-user .dbg-bubble { background: rgba(80,160,220,0.12); border-color: var(--accent); max-width: 80%; }
+  .dbg-msg.dbg-agg .dbg-bubble { max-width: 100%; }
+  .dbg-avatar {
+    flex: 0 0 32px; width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 600; font-size: 13px; font-family: var(--mono);
+  }
+  .dbg-bubble {
+    flex: 1; min-width: 0;
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 8px 12px; background: var(--panel);
+  }
+  .dbg-who {
+    display: flex; gap: 8px; align-items: baseline;
+    font-size: 12px; font-weight: 600; margin-bottom: 4px;
+  }
+  .dbg-who .dbg-meta { font-weight: normal; color: var(--muted); font-size: 10px; font-family: var(--mono); margin-left: auto; }
+  .dbg-body { font-size: 13px; line-height: 1.5; word-break: break-word; }
+  .dbg-body.md p { margin: 4px 0; }
+  .dbg-body.md pre { background: var(--panel-2); padding: 8px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
+  .dbg-body.md code { background: var(--panel-2); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+  .dbg-sep {
+    text-align: center; color: var(--muted); font-size: 11px;
+    font-family: var(--mono); margin: 16px 0 8px; padding: 0 12px;
+  }
+  .dbg-sep.dbg-round { border-top: 1px dashed var(--border); padding-top: 12px; }
+  .dbg-chip {
+    display: inline-block; border: 1px solid; border-radius: 10px;
+    padding: 1px 8px; margin: 2px; font-size: 10px; font-family: var(--mono);
+  }
+  .dbg-typing { display: inline-flex; gap: 4px; align-items: center; height: 16px; }
+  .dbg-typing span {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--muted);
+    animation: dbg-blink 1.2s infinite ease-in-out both;
+  }
+  .dbg-typing span:nth-child(2) { animation-delay: 0.2s; }
+  .dbg-typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes dbg-blink {
+    0%, 80%, 100% { opacity: 0.2; }
+    40% { opacity: 1; }
+  }
+  .chat-input { display: flex; gap: 10px; align-items: flex-end; }
+  .chat-input textarea {
+    flex: 1; min-height: 72px; resize: vertical;
+    background: var(--panel); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; font-family: inherit; font-size: 14px;
+    line-height: 1.4;
+  }
+  .chat-input textarea:focus { outline: none; border-color: var(--accent); }
+  .chat-input .send {
+    background: var(--accent); color: #000; border: none;
+    padding: 10px 22px; border-radius: 8px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    height: 44px;
+  }
+  .chat-input .send:hover { opacity: 0.85; }
+  .chat-input .send:disabled { opacity: 0.5; cursor: not-allowed; }
+  .chat-hint {
+    color: var(--muted); font-size: 11px; font-family: var(--mono);
+    text-align: center;
+  }
+
+  /* Chains editor: drag-n-drop layout. Uses SortableJS — provider-name pills move
+     between chain columns with `group: 'providers'`. Pool на правой панели
+     остаётся на месте при drop (clone semantics): провайдер можно положить в
+     несколько цепочек одновременно. */
+  .editor-toolbar {
+    display: flex; gap: 8px; align-items: center;
+    padding: 8px 12px; background: var(--panel-2); border-radius: 6px;
+    margin-bottom: 10px;
+  }
+  .editor-toolbar .grow { flex: 1; }
+  .editor-toolbar button {
+    padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--fg); cursor: pointer;
+    font-family: var(--mono); font-size: 12px;
+  }
+  .editor-toolbar button.primary { background: var(--accent); color: #000; border-color: var(--accent); }
+  .editor-toolbar button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .editor-toolbar .dirty-badge {
+    color: var(--warn); font-family: var(--mono); font-size: 11px;
+    padding: 2px 8px; border: 1px solid var(--warn); border-radius: 4px;
+  }
+  .editor-layout {
+    display: grid; grid-template-columns: 240px 1fr 220px;
+    gap: 12px; align-items: start;
+  }
+  @media (max-width: 980px) {
+    .editor-layout { grid-template-columns: 1fr; }
+  }
+  .editor-chains-list, .editor-chain-active, .editor-pool {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px; min-height: 100px;
+  }
+  .editor-chains-list .chain-row {
+    display: flex; align-items: center; gap: 4px;
+    padding: 6px 8px; border-radius: 4px; cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .editor-chains-list .chain-row:hover { background: var(--panel-2); }
+  .editor-chains-list .chain-row.active {
+    background: var(--panel-2); border-color: var(--accent);
+  }
+  .editor-chains-list .chain-row.drop-target {
+    border-color: var(--good); background: rgba(118,180,103,0.12);
+  }
+  .editor-chains-list .chain-row .name { flex: 1; font-family: var(--mono); font-size: 12px; }
+  .editor-chains-list .chain-row .count {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+  }
+  .editor-chains-list .chain-row .star { color: var(--warn); }
+  .editor-chains-list .chain-row .icon-btn {
+    background: transparent; border: none; color: var(--muted);
+    cursor: pointer; padding: 2px 4px; font-size: 14px;
+  }
+  .editor-chains-list .chain-row .icon-btn:hover { color: var(--fg); }
+  .editor-add-chain {
+    width: 100%; margin-top: 6px; padding: 6px; cursor: pointer;
+    background: var(--panel-2); border: 1px dashed var(--border);
+    border-radius: 4px; color: var(--muted); font-family: var(--mono); font-size: 12px;
+  }
+  .editor-add-chain:hover { color: var(--fg); border-color: var(--accent); }
+  .editor-section-title {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 0 4px 6px; border-bottom: 1px solid var(--border); margin-bottom: 8px;
+  }
+  .editor-providers { display: flex; flex-direction: column; gap: 4px; min-height: 60px; }
+  .editor-providers .empty {
+    color: var(--muted); font-family: var(--mono); font-size: 11px;
+    text-align: center; padding: 16px 8px; border: 1px dashed var(--border); border-radius: 4px;
+  }
+  .pill {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 8px; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 4px;
+    font-family: var(--mono); font-size: 11px;
+    cursor: grab;
+  }
+  .pill:active { cursor: grabbing; }
+  .pill .pname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill .rm {
+    background: transparent; border: none; color: var(--muted);
+    cursor: pointer; padding: 0 2px; font-size: 14px;
+  }
+  .pill .rm:hover { color: var(--bad); }
+  .pill .rank { color: var(--muted); font-size: 10px; min-width: 16px; }
+  .pill.sortable-ghost { opacity: 0.4; }
+  .pill.sortable-chosen { background: var(--accent); color: #000; }
+  .editor-pool .pill { cursor: copy; }
+  .editor-pool .pool-search {
+    width: 100%; padding: 5px 8px; margin-bottom: 6px;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px;
+    color: var(--fg); font-family: var(--mono); font-size: 11px;
+  }
+</style>
+<!-- SortableJS — drag-n-drop between provider lists in the chains editor. -->
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <h1>neurogate</h1>
+    <span class="default" title="цепочка, которая используется по умолчанию — когда клиент прислал model:auto или неизвестное значение">default-цепочка: <b id="default-chain">—</b></span>
+    <span class="spacer"></span>
+    <span class="status" id="status">загрузка…</span>
+    <button id="refresh">обновить</button>
+    <button id="logout" style="display:none">выйти</button>
+    <a class="basalt-badge" href="https://basalt-code.ru" target="_blank" rel="noopener" title="Made in Basalt">
+      <img src="/static/made-in-basalt.svg" alt="Made in Basalt" />
+    </a>
+  </div>
+</header>
+
+<main>
+  <div class="top-row">
+    <div class="nav">
+      <button class="nav-tab active" data-view="providers" title="таблица всех провайдеров и их лимитов по цепочкам">Провайдеры</button>
+      <button class="nav-tab" data-view="calls" title="реальные вызовы API: какая модель, цепочка, провайдер, токены, латентность">Вызовы</button>
+      <button class="nav-tab" data-view="audit" title="ежедневные отчёты: какие новые бесплатные модели появились">Аудит</button>
+      <button class="nav-tab" data-view="chat" title="песочница: выбери цепочку или модель и отправь вопрос">Чат</button>
+<button class="nav-tab" data-view="debate" title="мультиагентные дебаты: несколько моделей обсуждают вопрос и улучшают ответы">Debate</button>
+    </div>
+    <div id="total-rpd-slot"></div>
+    <div id="chains-edit-slot"></div>
+  </div>
+  <div id="error" class="error-banner" style="display:none"></div>
+  <div id="content"><div class="empty">загрузка…</div></div>
+</main>
+
+<dialog id="token-dialog">
+  <h3>Нужен API-токен</h3>
+  <p>У этого neurogate задан <code>NEUROGATE_API_TOKEN</code>. Вставь его, чтобы видеть данные. Сохраняется только в браузере.</p>
+  <input type="password" id="token-input" placeholder="Bearer-токен" autocomplete="off" />
+  <div class="row">
+    <button id="token-cancel">отмена</button>
+    <button id="token-save" class="primary">сохранить</button>
+  </div>
+</dialog>
+
+<dialog id="freetheai-dialog" style="max-width:520px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--fg);padding:18px 20px;font-family:var(--mono);">
+  <h3 style="margin:0 0 10px 0;color:var(--warn);">⚠ FreeTheAi — нужен daily <code>/checkin</code></h3>
+  <p style="margin:0 0 10px 0;font-size:13px;line-height:1.5;">
+    Ключ блокируется каждые 24h. Чтобы разлочить — набери <code>/checkin</code>
+    в Discord-канале <code>#api-keys</code>. Без чек-ина все запросы к
+    <code>freetheai:*</code> возвращают <code>HTTP 403 daily_checkin_required</code>,
+    цепочка фоллбэка пропускает их и идёт дальше.
+  </p>
+  <p style="margin:0 0 12px 0;font-size:13px;line-height:1.5;">
+    <b>Автоматизировать нельзя:</b> Discord ToS запрещает self-bot'ы; обычные боты
+    не могут вызывать slash-команды других ботов; browser-automation = self-bot
+    → ban от Discord и FreeTheAi.
+  </p>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
+    <a href="https://discord.com/channels/1461555807731585158/1473159205048553705" target="_blank" rel="noopener" style="padding:6px 11px;border-radius:4px;border:1px solid var(--border);background:var(--panel-2);color:var(--fg);font-family:var(--mono);font-size:12px;text-decoration:none;" title="Жми каждый день: канал → /checkin → ключ разлочен на 24h">↻ /checkin (refresh)</a>
+    <a href="https://discord.com/channels/1461555807731585158/1473159205048553705" target="_blank" rel="noopener" style="padding:6px 11px;border-radius:4px;border:1px solid var(--border);background:var(--panel-2);color:var(--fg);font-family:var(--mono);font-size:12px;text-decoration:none;" title="Первичная регистрация: /signup в этом канале">/signup</a>
+    <a href="https://discord.gg/secrets" target="_blank" rel="noopener" style="padding:6px 11px;border-radius:4px;border:1px solid var(--border);background:var(--panel-2);color:var(--fg);font-family:var(--mono);font-size:12px;text-decoration:none;" title="Инвайт на Discord-сервер FreeTheAi">+ Discord-сервер</a>
+  </div>
+  <div class="row" style="display:flex;justify-content:flex-end;">
+    <button id="freetheai-close" style="padding:6px 14px;">закрыть</button>
+  </div>
+</dialog>
+
+<script>
+(() => {
+  const TOKEN_KEY = "neurogate_token";
+  const REFRESH_MS = 5000;
+
+  const $ = (id) => document.getElementById(id);
+  const statusEl = $("status");
+  const contentEl = $("content");
+  // Запись innerHTML в polled-вьюхах (providers/calls) клампит window.scrollY к top,
+  // если новый layout короче старого. Сохраняем/восстанавливаем позицию вплотную к
+  // мутации DOM, а не вокруг async-refresh — иначе будем дёргать пользователя обратно
+  // после того, как он сам проскроллил во время сетевого запроса.
+  const setContentHtml = (html) => {
+    const y = window.scrollY;
+    contentEl.innerHTML = html;
+    if (window.scrollY !== y) window.scrollTo(0, y);
+  };
+  const errorEl = $("error");
+  const defaultChainEl = $("default-chain");
+  const dialog = $("token-dialog");
+  const tokenInput = $("token-input");
+  const logoutBtn = $("logout");
+
+  let timer = null;
+  let inFlight = false;
+
+  const getToken = () => localStorage.getItem(TOKEN_KEY) || "";
+  const setToken = (t) => {
+    if (t) localStorage.setItem(TOKEN_KEY, t);
+    else localStorage.removeItem(TOKEN_KEY);
+    logoutBtn.style.display = t ? "" : "none";
+  };
+
+  const authHeaders = () => {
+    const t = getToken();
+    return t ? { "Authorization": `Bearer ${t}` } : {};
+  };
+
+  const fmtTime = () => {
+    const d = new Date();
+    return d.toLocaleTimeString([], { hour12: false });
+  };
+
+  const showError = (msg) => {
+    errorEl.textContent = msg;
+    errorEl.style.display = msg ? "" : "none";
+  };
+
+  const promptToken = () => {
+    tokenInput.value = getToken();
+    dialog.showModal();
+    tokenInput.focus();
+  };
+
+  $("token-save").addEventListener("click", () => {
+    const v = tokenInput.value.trim();
+    if (v) setToken(v);
+    dialog.close();
+    refresh();
+  });
+  $("token-cancel").addEventListener("click", () => dialog.close());
+
+  // FreeTheAi /checkin info modal — triggered by ⚠ icon on freetheai cards.
+  // Delegated to document because cards re-render every poll cycle.
+  const freetheaiDialog = $("freetheai-dialog");
+  document.addEventListener("click", (e) => {
+    const trigger = e.target.closest && e.target.closest(".freetheai-trigger");
+    if (trigger && freetheaiDialog) {
+      e.preventDefault();
+      e.stopPropagation();
+      freetheaiDialog.showModal();
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if ((e.key === "Enter" || e.key === " ") && e.target.classList && e.target.classList.contains("freetheai-trigger")) {
+      e.preventDefault();
+      freetheaiDialog && freetheaiDialog.showModal();
+    }
+  });
+  if (freetheaiDialog) {
+    $("freetheai-close").addEventListener("click", () => freetheaiDialog.close());
+    // Click outside the dialog (backdrop) closes it.
+    freetheaiDialog.addEventListener("click", (e) => {
+      if (e.target === freetheaiDialog) freetheaiDialog.close();
+    });
+  }
+  tokenInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); $("token-save").click(); }
+  });
+
+  logoutBtn.addEventListener("click", () => {
+    setToken("");
+    promptToken();
+  });
+
+  $("refresh").addEventListener("click", refresh);
+
+  // initial visibility of logout
+  if (getToken()) logoutBtn.style.display = "";
+
+  async function fetchJSON(url) {
+    const resp = await fetch(url, { headers: authHeaders() });
+    if (resp.status === 401) {
+      const err = new Error("unauthorized");
+      err.status = 401;
+      throw err;
+    }
+    if (!resp.ok) throw new Error(`${url}: HTTP ${resp.status}`);
+    return await resp.json();
+  }
+
+  function pct(used, cap) {
+    if (!cap || cap <= 0) return 0;
+    return Math.min(100, (used / cap) * 100);
+  }
+
+  function barClass(p) {
+    if (p >= 90) return "bad";
+    if (p >= 70) return "warn";
+    return "";
+  }
+
+  function fmtReset(resetAt) {
+    if (!resetAt) return null;
+    const now = Date.now() / 1000;
+    const delta = resetAt - now;
+    const d = new Date(resetAt * 1000);
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    const absShort = `${hh}:${mm}`;
+    const absFull = d.toLocaleString([], { hour12: false });
+    let rel;
+    if (delta <= 0) rel = "сброс скоро";
+    else if (delta < 90) rel = `сброс через ${Math.ceil(delta)}с`;
+    else if (delta < 3600) rel = `сброс через ${Math.round(delta / 60)}м`;
+    else if (delta < 86400) rel = `сброс через ${Math.round(delta / 3600)}ч`;
+    else rel = `сброс через ${Math.round(delta / 86400)}д`;
+    return { rel, absShort, absFull };
+  }
+
+  function renderLimit(label, used, cap, resetAt) {
+    // Без лимита: бар не имеет смысла — скрываем вовсе, если трафика нет;
+    // иначе показываем компактно без бара.
+    const r = fmtReset(resetAt);
+    const resetHtml = r
+      ? `<div class="reset" title="сброс в ${r.absFull}">${r.rel}</div>`
+      : "";
+    const labelHint = label === "RPD"
+      ? "Requests Per Day — дневная квота провайдера. Считаем last_24h скользящим окном."
+      : "Requests Per Minute — минутная квота. Считаем last_1m скользящим окном.";
+    if (!cap) {
+      if (!used) return "";
+      const uncappedHint = label === "RPD"
+        ? "у провайдера нет публичного дневного лимита — ограничение только по параллельным соединениям"
+        : "у провайдера нет публичного минутного лимита — ограничение только по параллельным соединениям";
+      return `
+        <div class="limit uncapped-note">
+          <div class="label"><span title="${labelHint}">${label}</span><span title="${uncappedHint}">${used} / без лимита (concurrency-only)</span></div>
+          ${resetHtml}
+        </div>
+      `;
+    }
+    const p = pct(used, cap);
+    return `
+      <div class="limit">
+        <div class="label"><span title="${labelHint}">${label}</span><span title="использовано из квоты провайдера">${used} / ${cap} (${p.toFixed(0)}%)</span></div>
+        <div class="bar"><div class="fill ${barClass(p)}" style="width:${p}%"></div></div>
+        ${resetHtml}
+      </div>
+    `;
+  }
+
+  function statusDot(counters) {
+    const total = Object.values(counters || {}).reduce((a, b) => a + b, 0);
+    if (total === 0) return "";
+    const ok = counters.success || 0;
+    const ratio = ok / total;
+    if (ratio >= 0.9) return "good";
+    if (ratio >= 0.5) return "warn";
+    return "bad";
+  }
+
+  function statusTitle(counters) {
+    const total = Object.values(counters || {}).reduce((a, b) => a + b, 0);
+    if (total === 0) return "индикатор здоровья — данных с рестарта нет";
+    const ok = counters.success || 0;
+    const p = ((ok / total) * 100).toFixed(0);
+    if (ok / total >= 0.9) return `здоровый: ${p}% успешных из ${total} с рестарта`;
+    if (ok / total >= 0.5) return `деградация: ${p}% успешных из ${total} с рестарта`;
+    return `проблемы: всего ${p}% успешных из ${total} с рестарта`;
+  }
+
+  const OUTCOME_ORDER = [
+    "success", "rate_limit", "rate_capped", "server_error",
+    "timeout", "context_exceeded", "empty", "no_tool_support",
+    "no_reasoning_support", "decommissioned", "other",
+  ];
+
+  const OUTCOME_HINTS = {
+    success: "успешный ответ провайдера (HTTP 2xx + непустое тело)",
+    rate_limit: "провайдер вернул 429 — квота на его стороне исчерпана",
+    rate_capped: "запрос не отправлен: локальный бакет посчитал квоту выбранной",
+    server_error: "HTTP 5xx от провайдера — сервер сломался",
+    timeout: "таймаут ожидания ответа, провайдер не ответил вовремя",
+    context_exceeded: "промпт не влез в контекст модели",
+    empty: "провайдер вернул пустое тело (0 токенов)",
+    no_tool_support: "модель не поддерживает tool-calling для этого запроса",
+    no_reasoning_support: "клиент попросил reasoning, у модели его нет — скип до reasoning-модели в цепочке",
+    decommissioned: "модель выведена из эксплуатации (HTTP 404/410)",
+    other: "прочие ошибки, не попавшие в категории выше",
+  };
+
+  function renderOutcomes(counters, used24h) {
+    if (!counters || Object.keys(counters).length === 0) {
+      const hint = used24h > 0
+        ? `нет данных с рестарта (${used24h} за 24ч в SQLite)`
+        : 'пока не вызывался';
+      const title = used24h > 0
+        ? "счётчики исходов хранятся только в памяти процесса и обнуляются при рестарте. last_24h живёт в SQLite."
+        : "провайдер ещё не вызывался с момента старта neurogate";
+      return `<div class="outcomes" title="${title}"><span class="none">${hint}</span></div>`;
+    }
+    const keys = Object.keys(counters).sort((a, b) => {
+      const ia = OUTCOME_ORDER.indexOf(a);
+      const ib = OUTCOME_ORDER.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+    const parts = keys.map((k) => {
+      const v = counters[k];
+      const hint = OUTCOME_HINTS[k] || k;
+      return `<span class="o ${k}" title="${hint}"><span class="k">${k}</span><span class="v">${v}</span></span>`;
+    });
+    return `<div class="outcomes">${parts.join("")}</div>`;
+  }
+
+  function renderBrain(reasoning) {
+    if (!reasoning) return "";
+    return `<span class="brain" title="reasoning-модель: внутренне думает перед ответом, тратит reasoning_tokens и время. Активируется на сложных задачах.">🧠</span>`;
+  }
+
+  function renderVision(isVision) {
+    if (!isVision) return "";
+    return `<span class="vision" title="vision-capable: принимает изображения (image_url) во входе. Член цепочки image в config.yaml.">🖼️</span>`;
+  }
+
+  function renderWeb(isWeb) {
+    if (!isWeb) return "";
+    return `<span class="web" title="нативный web-search: gemini google_search / groq browser_search / OR :online. Член цепочки web в config.yaml — инжектится автоматически при chain=web.">🌐</span>`;
+  }
+
+  function renderAudio(isAudio) {
+    if (!isAudio) return "";
+    return `<span class="audio" title="speech-to-text: принимает аудио-файл на /v1/audio/transcriptions. Член цепочки audio в config.yaml (Groq Whisper нативно, Gemini — через multimodal inline_data).">🎙️</span>`;
+  }
+
+  function renderBadge(flag, cls, emoji, title) {
+    if (!flag) return "";
+    return `<span class="${cls}" title="${title}">${emoji}</span>`;
+  }
+
+  function renderNoText(isTranscriptionOnly) {
+    if (!isTranscriptionOnly) return "";
+    return `<span class="notext" title="transcription-only: провайдер только в цепочке audio и не умеет /chat/completions (Whisper). Не «думает», просто расшифровывает.">💬</span>`;
+  }
+
+  function renderQuota(isQuotaLimited) {
+    if (!isQuotaLimited) return "";
+    return `<span class="quota" title="quota-limited: расход списывается из платного баланса или гранта (GigaChat Freemium 1М токенов/30 дней, Yandex AI Studio гранты 4К+6К ₽). В отличие от RPD/RPM, эти лимиты не сбрасываются ежедневно — следи за расходом в developers.sber.ru/studio и center.yandex.cloud/billing.">💳</span>`;
+  }
+
+  function renderIq(q) {
+    if (q == null) {
+      return `<span class="iq iq-na" title="индекс умности не задан">—</span>`;
+    }
+    let cls = "iq-low";
+    if (q >= 40) cls = "iq-top";
+    else if (q >= 30) cls = "iq-strong";
+    else if (q >= 20) cls = "iq-mid";
+    return `<span class="iq ${cls}" title="AA Intelligence Index v4.0 (config.yaml → quality). Пороги: ≥40 top, ≥30 strong, ≥20 mid, <20 low.">${q}</span>`;
+  }
+
+  function renderRu(r) {
+    if (r == null) {
+      return `<span class="ru ru-na" title="RU-Quality не задан"><span class="pfx">ру</span>—</span>`;
+    }
+    const cls = r < 20 ? "ru-bad" : "";
+    return `<span class="ru ${cls}" title="RU-Quality 0-100 (config.yaml → ru): грамматика + корректность физики + следование инструкции. Пороги: ≥80 top, ≥60 strong, ≥40 mid, ≥20 low, <20 bad."><span class="pfx">ру</span>${r}</span>`;
+  }
+
+  function rpdTier(rpd) {
+    // Границы совпадают с реальными кластерами провайдеров (20/50 → 150/300 → 1000 → 14400).
+    // null → без RPD (mistral RPM-only, nvidia, zai concurrency) = hyper (вне шкалы).
+    if (!rpd) return { level: "hyper", fill: 5, label: "без дневного лимита — RPM/concurrency" };
+    if (rpd < 100) return { level: 1, fill: 1, label: `${rpd} RPD — дефицит` };
+    if (rpd < 500) return { level: 2, fill: 2, label: `${rpd} RPD — среднее` };
+    if (rpd < 5000) return { level: 3, fill: 3, label: `${rpd} RPD — крупное` };
+    return { level: 4, fill: 4, label: `${rpd} RPD — массовое` };
+  }
+
+  function renderTier(rpd) {
+    const t = rpdTier(rpd);
+    const bars = [1, 2, 3, 4, 5].map((i) => {
+      const on = i <= t.fill ? "on" : "";
+      return `<span class="b b${i} ${on}"></span>`;
+    }).join("");
+    return `<span class="tier tier-${t.level}" title="${t.label}">${bars}</span>`;
+  }
+
+  function renderCard(rank, usageRow, counters, latency, visionSet, webSet, audioSet, noTextSet, specSets) {
+    const caps = usageRow.caps || {};
+    const used1m = usageRow.last_1m || 0;
+    const used24h = usageRow.last_24h || 0;
+    const rpm = caps.rpm;
+    const rpd = caps.rpd;
+    const reset = usageRow.reset || {};
+    const capped =
+      (rpm && used1m >= rpm) || (rpd && used24h >= rpd);
+    const dot = statusDot(counters);
+    const liveAvg = latency && latency.count > 0 ? latency.avg_s.toFixed(1) + "s" : "—";
+    const benchAvg = usageRow.latency_s != null ? usageRow.latency_s.toFixed(1) + "s" : "—";
+    const callCount = latency && latency.count ? latency.count : 0;
+
+    const cardTitle = capped
+      ? "локальный бакет считает квоту исчерпанной — запросы пойдут дальше по цепочке фоллбэка"
+      : "";
+    return `
+      <div class="card ${capped ? 'capped' : ''}"${cardTitle ? ` title="${cardTitle}"` : ""}>
+        <div class="head">
+          <span class="rank" title="позиция в цепочке фоллбэка — чем меньше номер, тем раньше вызывается">#${rank}</span>
+          <span class="dot ${dot}" title="${statusTitle(counters)}"></span>
+          <span class="provider" title="provider:model — см. config.yaml">${usageRow.provider}</span>
+          ${renderBrain(usageRow.reasoning)}
+          ${renderVision(visionSet && visionSet.has(usageRow.provider))}
+          ${renderWeb(webSet && webSet.has(usageRow.provider))}
+          ${renderAudio(audioSet && audioSet.has(usageRow.provider))}
+          ${renderBadge(specSets && specSets.imageGen.has(usageRow.provider), "paint", "🎨", "text→image: член цепочки image_gen в config.yaml (FLUX/SDXL/Kandinsky/YandexART). Вызывается через /v1/images/generations.")}
+          ${renderBadge(specSets && specSets.translate.has(usageRow.provider), "translate", "🈯", "перевод: член цепочки translation / translate_adaptive в config.yaml. Используется на /v1/translate (dedicated MT API или LLM-режим).")}
+          ${renderBadge(specSets && specSets.tts.has(usageRow.provider), "tts", "🗣️", "text-to-speech: член цепочки tts в config.yaml. Синтез речи через /v1/audio/speech.")}
+          ${renderBadge(specSets && specSets.sfx.has(usageRow.provider), "sfx", "🥁", "sound effects: член цепочки sfx в config.yaml. Генерация звуковых эффектов / музыки.")}
+          ${renderBadge(specSets && specSets.embed.has(usageRow.provider), "embed", "🧬", "embeddings: член цепочки embed / embed_code в config.yaml. Возвращает плотные векторы через /v1/embeddings.")}
+          ${renderBadge(specSets && specSets.rerank.has(usageRow.provider), "rerank", "🥇", "reranker: член цепочки rerank в config.yaml. Сортирует кандидатов по релевантности (cross-encoder).")}
+          ${renderBadge(specSets && specSets.moderation.has(usageRow.provider), "mod", "🛡️", "модерация: член цепочки moderation* в config.yaml. Классифицирует контент (toxicity / jailbreak / NSFW и т.п.).")}
+          ${(usageRow.provider && usageRow.provider.startsWith("freetheai")) ? `<span class="checkin freetheai-trigger" role="button" tabindex="0" style="cursor:pointer;" title="FreeTheAi: ключ блокируется каждые 24h. Клик — подробности и кнопки /checkin">⚠</span>` : ""}
+          ${renderNoText(noTextSet && noTextSet.has(usageRow.provider))}
+          ${renderQuota(usageRow.quota_limited)}
+          <span class="spacer"></span>
+          ${renderIq(usageRow.quality)}
+          ${renderTier(rpd)}
+        </div>
+        ${renderLimit("RPD", used24h, rpd, reset.rpd_reset_at)}
+        ${renderLimit("RPM", used1m, rpm, reset.rpm_reset_at)}
+        ${renderOutcomes(counters, used24h)}
+        <div class="foot">
+          <span title="количество запросов, ушедших в провайдера с момента запуска процесса neurogate">с рестарта: ${callCount}</span>
+          <span title="среднее: бенч (хардкод из config.yaml → latency_s, замер с сервера) / live (успешные запросы с рестарта)">среднее: ${benchAvg} / ${liveAvg}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTotalRpd(usage) {
+    // Сумма дневных лимитов всех провайдеров, у которых rpd задан, и сумма фактических
+    // last_24h по тем же провайдерам. Провайдеры без rpd (concurrency-only / RPM-only)
+    // не считаются — мы не можем сложить их ёмкость в число.
+    let capTotal = 0;
+    let usedTotal = 0;
+    let counted = 0;
+    for (const u of usage || []) {
+      const rpd = u.caps && u.caps.rpd;
+      if (!rpd) continue;
+      capTotal += rpd;
+      usedTotal += u.last_24h || 0;
+      counted += 1;
+    }
+    if (capTotal === 0) return "";
+    const p = pct(usedTotal, capTotal);
+    const capFmt = capTotal.toLocaleString("ru-RU");
+    const usedFmt = usedTotal.toLocaleString("ru-RU");
+    return `
+      <div class="total-rpd" title="сумма last_24h / сумма RPD-квот по всем провайдерам активной цепочки. Провайдеры без RPD (concurrency-only) не учитываются — у них нет числовой ёмкости, которую можно сложить.">
+        <span class="title">дневной лимит суммарно</span>
+        <span class="val">${usedFmt} / ${capFmt}</span>
+        <span class="val">${p.toFixed(1)}%</span>
+        <span class="val">${counted} провайдеров</span>
+        <div class="bar"><div class="fill ${barClass(p)}" style="width:${p}%"></div></div>
+      </div>
+    `;
+  }
+
+  let activeChain = null;
+  let activeView = "providers";
+  let latestStats = null;
+  let latestMetrics = null;
+  // Chains editor state. `null` ⇒ read-only providers grid. When user toggles
+  // edit mode we snapshot the current shape into editorState — drag-n-drop
+  // mutates the snapshot until Save (PUT /v1/chains) or Cancel.
+  let editorState = null;
+
+  // Audit state
+  let auditList = [];
+  let activeAuditDate = null;
+  let auditBody = null; // {date, markdown}
+  let auditRunning = false;
+  let auditDiffMode = false;
+  let auditPrevBody = null; // {date, markdown} — предыдущий отчёт для diff
+  let auditChain = "code"; // дефолт для ручного запуска — code (Gemini первый + лучшее качество)
+
+  // Chat state
+  const chatState = {
+    model: null,     // selected chain name or provider name
+    customModel: "", // overrides model when non-empty: ad-hoc kind:model_id (e.g. "openai:gpt-5-foo")
+    messages: [],    // [{role, content, provider?, chain?, thinking?}]
+    sending: false,
+    draft: "",
+    reasoningEffort: "auto",  // auto = don't send flag; none/low/medium/high → reasoning_effort
+  };
+
+  // Effective model id sent to /v1/chat/completions: custom-input wins over the
+  // dropdown when non-empty. Trims whitespace so a stray space doesn't slip through.
+  function effectiveModelId() {
+    const custom = (chatState.customModel || "").trim();
+    return custom || chatState.model;
+  }
+
+  // Calls state — populated from /v1/calls. Filters are client-side; new fetches
+  // re-issue the request with query-params so server can scope.
+  const callsState = {
+    items: [],
+    summary: null,
+    filters: { endpoint: "", chain: "", provider: "", outcome: "", client: "" },
+    limit: 200,
+    loading: false,
+    error: null,
+  };
+
+  const debateState = {
+    draft: "",
+    agentsN: 3,
+    roundsN: 2,
+    aggregatorChain: "reasoning_quality",
+    running: false,
+    abort: null,
+    meta: null,           // {agents:[...], rounds, aggregator_chain}
+    roundsData: [],       // roundsData[r][i] = agent_done event or null
+    aggResult: null,      // aggregator_done event
+    aggCurrent: null,     // provider currently attempting synthesis
+    error: null,
+    userQuestion: null,   // last submitted question (for chat-style header)
+  };
+
+  function renderProviders(stats, metrics) {
+    if (editorState) {
+      renderChainsEditor(stats);
+      return;
+    }
+    const { default_chain, chains, usage } = stats;
+    const counters = metrics.counters || {};
+    const latency = metrics.latency || {};
+    const usageByName = {};
+    for (const u of usage) usageByName[u.provider] = u;
+
+    const chainNames = Object.keys(chains);
+    if (chainNames.length === 0) {
+      contentEl.innerHTML = `<div class="empty">цепочки не настроены</div>`;
+      return;
+    }
+
+    if (!activeChain || !chains[activeChain]) {
+      activeChain = default_chain && chains[default_chain] ? default_chain : chainNames[0];
+    }
+
+    // Группы для сайдбара. Любая цепочка не из списка попадает в «прочее»,
+    // чтобы новые имена в config.yaml не пропадали из UI.
+    const CHAIN_GROUPS = [
+      { label: "чат",            names: ["chat", "chat_fast", "chat_en", "latency", "quality", "unlimited"] },
+      { label: "reasoning",      names: ["reasoning_quality", "reasoning_deep", "sc", "moa", "debate"] },
+      { label: "код",            names: ["code", "code_fast"] },
+      { label: "изображения",    names: ["image", "image_gen", "image_edit"] },
+      { label: "аудио",          names: ["audio", "tts", "sfx"] },
+      { label: "веб / поиск",    names: ["web", "deep_search", "translation", "translate_adaptive"] },
+      { label: "эмбеддинги",     names: ["embed", "embed_code", "rerank"] },
+      { label: "модерация",      names: ["moderation", "moderation_image", "moderation_jailbreak", "moderation_ru"] },
+      { label: "платно / квота", names: ["paid", "quota"] },
+    ];
+    // Короткое описание каждой цепочки — для tooltip в сайдбаре.
+    const CHAIN_DESCRIPTIONS = {
+      chat: "универсальный чат: RU-floor + AA tiebreak, длинный фоллбэк включая free-роутеры",
+      chat_fast: "быстрый чат: тот же порядок что chat, но без всех с latency > 5s",
+      chat_en: "EN-чат: AA Intelligence Index без RU-веса, тяжёлый reasoning опущен ниже",
+      latency: "минимальная задержка: порядок строго по медиане Total time",
+      quality: "максимальное качество: AA Intelligence Index v4.0",
+      unlimited: "без RPD-кэпа: для высокого суточного трафика, чтобы не упереться в лимиты",
+      code: "код: reasoning + SWE/LCB composite, code-specialized первыми",
+      code_fast: "быстрый код: только модели с реальным latency ≤10s",
+      reasoning_quality: "thinking-модели по AA: для умного ответа на сложную задачу",
+      reasoning_deep: "thinking-модели по глубине рассуждения: для CoT-heavy многошаговых задач",
+      sc: "self-consistency: N сэмплов одной модели → агрегатор",
+      moa: "Mixture-of-Agents: иерархический ансамбль без inter-agent comm",
+      debate: "multi-agent debate: разные семьи моделей для диверсификации, 10 школ",
+      image: "vision: модели, принимающие image_url на вход",
+      image_gen: "генерация картинок: text2img провайдеры",
+      image_edit: "редактирование картинки (img2img): только FreeTheAi gpt-image-2",
+      audio: "STT: транскрипция аудио (Whisper / Gemini inline)",
+      tts: "синтез речи (Edge TTS, безлимит без ключа)",
+      sfx: "звуковые эффекты / sound design (HF Spaces)",
+      web: "нативный web-search: gemini google_search / OR :online / groq browser_search",
+      deep_search: "глубокий поиск: planner + searcher + synthesizer + critic",
+      translation: "перевод: dedicated MT провайдеры",
+      translate_adaptive: "адаптивный перевод: Yandex для RU-пар, Cohere Aya для остального",
+      embed: "embeddings: текстовые векторы, MRL/task/input_type passthrough",
+      embed_code: "code embeddings: Voyage code-3, Jina, Codestral",
+      rerank: "rerank: top_n / return_documents passthrough",
+      moderation: "модерация текста: omni + Mistral + независимый pool",
+      moderation_image: "multimodal модерация (OpenAI omni)",
+      moderation_jailbreak: "jailbreak/prompt-injection детектор (Prompt Guard 2 + safety net)",
+      moderation_ru: "RU-модерация: Mistral native + OpenAI multilingual + CF Llama Guard",
+      paid: "платные модели: только по явному запросу, не трогать без разрешения",
+      quota: "GigaChat PERS pool: сильная RU-генерация, 1M токенов/30 дней",
+    };
+
+    const grouped = CHAIN_GROUPS.map((g) => ({
+      label: g.label,
+      names: g.names.filter((n) => chains[n]),
+    })).filter((g) => g.names.length > 0);
+    const seen = new Set(grouped.flatMap((g) => g.names));
+    const leftover = chainNames.filter((n) => !seen.has(n)).sort();
+    if (leftover.length) grouped.push({ label: "прочее", names: leftover });
+
+    const escapeAttr = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const renderItem = (name) => {
+      const providers = chains[name] || [];
+      const isDefault = name === default_chain;
+      const isActive = name === activeChain;
+      const desc = CHAIN_DESCRIPTIONS[name];
+      const itemTitle = escapeAttr(
+        (desc ? `${desc}\n\n` : "")
+        + `цепочка «${name}» — ${providers.length} провайдеров. Выбирается клиентом через поле model в запросе (model: «${name}»).`
+      );
+      return `
+        <button class="sidebar-item ${isActive ? 'active' : ''}" data-chain="${name}" title="${itemTitle}">
+          <span class="name">${name}</span>
+          ${isDefault ? '<span class="tag" title="используется, если клиент прислал model:auto или неизвестное значение">default</span>' : ''}
+          <span class="count" title="${providers.length} провайдеров в цепочке">${providers.length}</span>
+        </button>
+      `;
+    };
+    const sidebar = grouped.map((g) => `
+      <div class="sidebar-group">
+        <div class="group-label">${g.label}</div>
+        ${g.names.map(renderItem).join("")}
+      </div>
+    `).join("");
+
+    const providers = chains[activeChain] || [];
+    const visionSet = new Set(chains.image || []);
+    const webSet = new Set(chains.web || []);
+    const audioSet = new Set(chains.audio || []);
+    const unionSet = (...names) => {
+      const s = new Set();
+      for (const n of names) for (const p of (chains[n] || [])) s.add(p);
+      return s;
+    };
+    const specSets = {
+      imageGen: unionSet("image_gen"),
+      translate: unionSet("translation", "translate_adaptive"),
+      tts: unionSet("tts"),
+      sfx: unionSet("sfx"),
+      embed: unionSet("embed", "embed_code"),
+      rerank: unionSet("rerank"),
+      moderation: unionSet("moderation", "moderation_image", "moderation_jailbreak", "moderation_ru"),
+    };
+    // transcription-only: провайдер есть только в цепочке `audio` (Whisper). Gemini в audio
+    // тоже отсюда, но он состоит и в других чат-цепочках — значит умеет в текст и не попадёт.
+    const noTextSet = new Set();
+    for (const p of audioSet) {
+      let inOther = false;
+      for (const [cname, plist] of Object.entries(chains)) {
+        if (cname === "audio") continue;
+        if (plist && plist.includes(p)) { inOther = true; break; }
+      }
+      if (!inOther) noTextSet.add(p);
+    }
+    const cards = providers.map((p, i) => {
+      const row = usageByName[p] || { provider: p, caps: {}, last_1m: 0, last_24h: 0 };
+      return renderCard(i + 1, row, counters[p], latency[p], visionSet, webSet, audioSet, noTextSet, specSets);
+    }).join("");
+
+    setContentHtml(`
+      <div class="providers-layout">
+        <aside class="providers-sidebar">${sidebar}</aside>
+        <div class="cards">${cards || '<div class="empty">цепочка пустая</div>'}</div>
+      </div>
+    `);
+    const slot = document.getElementById("total-rpd-slot");
+    if (slot) slot.innerHTML = renderTotalRpd(usage);
+    const editSlot = document.getElementById("chains-edit-slot");
+    if (editSlot) editSlot.innerHTML = `<button id="chains-edit-toggle" style="padding:5px 10px;border-radius:4px;border:1px solid var(--border);background:var(--panel-2);color:var(--fg);cursor:pointer;font-family:var(--mono);font-size:11px;" title="Перетаскивай провайдеров между цепочками. Сохранение пишет config.yaml + горячий reload роутера без рестарта.">✎ редактировать цепочки</button>`;
+
+    const editBtn = document.getElementById("chains-edit-toggle");
+    if (editBtn) editBtn.addEventListener("click", () => openChainsEditor());
+
+    contentEl.querySelectorAll(".sidebar-item").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const name = btn.dataset.chain;
+        if (name && name !== activeChain) {
+          activeChain = name;
+          renderProviders(stats, metrics);
+        }
+      });
+    });
+  }
+
+  // === Chains editor (drag-n-drop via SortableJS) ===========================
+  // Opens via «✎ редактировать цепочки» from the providers view. Snapshots
+  // the current shape into editorState and lets the user reshape it without
+  // server round-trips until Save (PUT /v1/chains).
+
+  async function openChainsEditor() {
+    try {
+      const data = await fetchJSON("/v1/chains/edit");
+      // Deep-clone chain arrays so we mutate snapshot, not server response.
+      const chainsSnap = {};
+      for (const [k, v] of Object.entries(data.chains || {})) chainsSnap[k] = [...v];
+      editorState = {
+        chains: chainsSnap,
+        providers: data.providers || [],
+        default: data.default,
+        active: activeChain && chainsSnap[activeChain] ? activeChain : data.default,
+        dirty: false,
+        saving: false,
+        error: null,
+        poolFilter: "",
+      };
+      renderChainsEditor(latestStats);
+    } catch (e) {
+      alert("Не удалось загрузить цепочки: " + (e.message || e));
+    }
+  }
+
+  function closeChainsEditor() {
+    if (editorState && editorState.dirty &&
+        !confirm("Есть несохранённые изменения. Точно отменить?")) return;
+    editorState = null;
+    if (latestStats && latestMetrics) renderProviders(latestStats, latestMetrics);
+  }
+
+  function renderChainsEditor() {
+    const st = editorState;
+    if (!st) return;
+    const chainNames = Object.keys(st.chains);
+    if (!st.chains[st.active] && chainNames.length) st.active = chainNames[0];
+
+    const filter = (st.poolFilter || "").toLowerCase().trim();
+    const poolItems = st.providers
+      .filter((p) => !filter || p.toLowerCase().includes(filter))
+      .map((p) => `<div class="pill" data-name="${escapeHtml(p)}"><span class="pname" title="${escapeHtml(p)}">${escapeHtml(p)}</span></div>`)
+      .join("");
+
+    const chainsList = chainNames.map((name) => {
+      const isActive = name === st.active;
+      const isDefault = name === st.default;
+      const count = st.chains[name].length;
+      return `
+        <div class="chain-row ${isActive ? 'active' : ''}" data-chain="${escapeHtml(name)}">
+          <span class="name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+          ${isDefault ? '<span class="star" title="default chain">★</span>' : ''}
+          <span class="count">${count}</span>
+          <button class="icon-btn act-default" title="Сделать default" data-chain="${escapeHtml(name)}">${isDefault ? '★' : '☆'}</button>
+          <button class="icon-btn act-rename" title="Переименовать" data-chain="${escapeHtml(name)}">✎</button>
+          <button class="icon-btn act-delete" title="Удалить цепочку" data-chain="${escapeHtml(name)}">✕</button>
+        </div>
+      `;
+    }).join("");
+
+    const activeProviders = st.chains[st.active] || [];
+    const activeBody = activeProviders.length
+      ? activeProviders.map((p, i) => `
+          <div class="pill" data-name="${escapeHtml(p)}">
+            <span class="rank">${i + 1}.</span>
+            <span class="pname" title="${escapeHtml(p)}">${escapeHtml(p)}</span>
+            <button class="rm" title="Убрать из цепочки" data-name="${escapeHtml(p)}">✕</button>
+          </div>
+        `).join("")
+      : '<div class="empty">пусто — перетащи провайдера справа</div>';
+
+    contentEl.innerHTML = `
+      <div class="editor-toolbar">
+        <b style="font-family:var(--mono);font-size:13px;">редактирование цепочек</b>
+        <span style="color:var(--muted);font-family:var(--mono);font-size:11px;">drag-n-drop · сохранение пишет config.yaml + hot reload</span>
+        ${st.dirty ? '<span class="dirty-badge">несохранено</span>' : ''}
+        <span class="grow"></span>
+        ${st.error ? `<span style="color:var(--bad);font-family:var(--mono);font-size:11px;">${escapeHtml(st.error)}</span>` : ''}
+        <button id="ed-cancel">отменить</button>
+        <button id="ed-save" class="primary" ${(!st.dirty || st.saving) ? 'disabled' : ''}>${st.saving ? 'сохраняю…' : 'сохранить'}</button>
+      </div>
+      <div class="editor-layout">
+        <div class="editor-chains-list">
+          <div class="editor-section-title">цепочки (${chainNames.length})</div>
+          <div id="ed-chains">${chainsList}</div>
+          <button class="editor-add-chain" id="ed-add-chain">+ новая цепочка</button>
+        </div>
+        <div class="editor-chain-active">
+          <div class="editor-section-title">${escapeHtml(st.active || '—')} · ${activeProviders.length} провайдеров</div>
+          <div class="editor-providers" id="ed-active">${activeBody}</div>
+          <div style="display:flex;gap:6px;margin-top:8px;">
+            <input type="text" id="ed-adhoc-input" class="pool-search" style="flex:1;"
+              placeholder="ad-hoc: kind:model_id (например, openai:gpt-5-foo)"
+              title="Соберёт one-shot OpenAI-compat провайдера на лету. Ключ берётся из env (OPENAI_API_KEY, GROQ_API_KEY, ...)." />
+            <button id="ed-adhoc-add">+</button>
+          </div>
+        </div>
+        <div class="editor-pool">
+          <div class="editor-section-title">пул провайдеров (${st.providers.length})</div>
+          <input type="text" class="pool-search" id="ed-pool-search" placeholder="фильтр…" value="${escapeHtml(st.poolFilter || '')}" />
+          <div class="editor-providers" id="ed-pool">${poolItems}</div>
+        </div>
+      </div>
+    `;
+
+    bindChainsEditorEvents();
+  }
+
+  function bindChainsEditorEvents() {
+    const st = editorState;
+    document.getElementById("ed-cancel").addEventListener("click", closeChainsEditor);
+    document.getElementById("ed-save").addEventListener("click", saveChainsEditor);
+    document.getElementById("ed-add-chain").addEventListener("click", () => {
+      const name = (prompt("Имя новой цепочки (буквы/цифры/_, без пробелов):") || "").trim();
+      if (!name) return;
+      if (!/^[a-zA-Z][\w-]*$/.test(name)) {
+        alert("Допустимо: буква в начале, дальше буквы/цифры/_/-.");
+        return;
+      }
+      if (st.chains[name]) { alert("Такая цепочка уже есть."); return; }
+      if (st.providers.includes(name)) { alert("Имя совпадает с провайдером."); return; }
+      st.chains[name] = [];
+      st.active = name;
+      st.dirty = true;
+      renderChainsEditor();
+    });
+
+    // Chain rows: click to switch active, action buttons.
+    document.querySelectorAll("#ed-chains .chain-row").forEach((row) => {
+      row.addEventListener("click", (e) => {
+        if (e.target.closest(".icon-btn")) return;
+        st.active = row.dataset.chain;
+        renderChainsEditor();
+      });
+    });
+    document.querySelectorAll("#ed-chains .act-default").forEach((b) => {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const name = b.dataset.chain;
+        if (st.default !== name) {
+          st.default = name;
+          st.dirty = true;
+          renderChainsEditor();
+        }
+      });
+    });
+    document.querySelectorAll("#ed-chains .act-rename").forEach((b) => {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const oldName = b.dataset.chain;
+        const newName = (prompt("Новое имя цепочки:", oldName) || "").trim();
+        if (!newName || newName === oldName) return;
+        if (!/^[a-zA-Z][\w-]*$/.test(newName)) {
+          alert("Допустимо: буква в начале, дальше буквы/цифры/_/-.");
+          return;
+        }
+        if (st.chains[newName]) { alert("Такая цепочка уже есть."); return; }
+        if (st.providers.includes(newName)) { alert("Имя совпадает с провайдером."); return; }
+        // Preserve key order — rebuild dict.
+        const rebuilt = {};
+        for (const [k, v] of Object.entries(st.chains)) {
+          rebuilt[k === oldName ? newName : k] = v;
+        }
+        st.chains = rebuilt;
+        if (st.default === oldName) st.default = newName;
+        if (st.active === oldName) st.active = newName;
+        st.dirty = true;
+        renderChainsEditor();
+      });
+    });
+    document.querySelectorAll("#ed-chains .act-delete").forEach((b) => {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const name = b.dataset.chain;
+        if (Object.keys(st.chains).length <= 1) { alert("Нужна хотя бы одна цепочка."); return; }
+        if (!confirm(`Удалить цепочку «${name}»?`)) return;
+        delete st.chains[name];
+        if (st.default === name) st.default = Object.keys(st.chains)[0];
+        if (st.active === name) st.active = Object.keys(st.chains)[0];
+        st.dirty = true;
+        renderChainsEditor();
+      });
+    });
+
+    // Active chain: SortableJS — accepts drops from pool (clone) and from itself
+    // (reorder). Removing a pill goes through the ✕ button below.
+    const activeEl = document.getElementById("ed-active");
+    Sortable.create(activeEl, {
+      group: { name: "providers", put: true, pull: true },
+      animation: 150,
+      ghostClass: "sortable-ghost",
+      chosenClass: "sortable-chosen",
+      onAdd: (evt) => {
+        // Drop from pool — Sortable clones the DOM; we read the name and rebuild
+        // the chain from current DOM order so dedupe and source stay clean.
+        syncActiveFromDom();
+      },
+      onUpdate: () => syncActiveFromDom(),
+      onRemove: () => syncActiveFromDom(),
+    });
+    // Pool: clone-on-drag so the same provider can land in multiple chains.
+    const poolEl = document.getElementById("ed-pool");
+    Sortable.create(poolEl, {
+      group: { name: "providers", pull: "clone", put: false },
+      sort: false,
+      animation: 150,
+      ghostClass: "sortable-ghost",
+      chosenClass: "sortable-chosen",
+    });
+
+    // ✕ buttons inside active chain.
+    document.querySelectorAll("#ed-active .rm").forEach((b) => {
+      b.addEventListener("click", () => {
+        const name = b.dataset.name;
+        st.chains[st.active] = st.chains[st.active].filter((p) => p !== name);
+        st.dirty = true;
+        renderChainsEditor();
+      });
+    });
+
+    // Ad-hoc kind:model_id input — добавляем строку в активную цепочку.
+    // Серверная валидация (build_adhoc_provider) сработает на PUT /v1/chains
+    // и поднимет 400 с понятной причиной (неизвестный kind / нет env-ключа).
+    const adhocInput = document.getElementById("ed-adhoc-input");
+    const adhocBtn = document.getElementById("ed-adhoc-add");
+    const submitAdhoc = () => {
+      const raw = (adhocInput.value || "").trim();
+      if (!raw) return;
+      if (!/^[a-z][\w-]*[:/].+$/i.test(raw)) {
+        alert("Формат: kind:model_id (например, openai:gpt-5-foo).");
+        return;
+      }
+      if (!st.active) return;
+      const chain = st.chains[st.active];
+      if (chain.includes(raw)) { alert("Уже в этой цепочке."); return; }
+      chain.push(raw);
+      st.dirty = true;
+      adhocInput.value = "";
+      renderChainsEditor();
+    };
+    if (adhocBtn) adhocBtn.addEventListener("click", submitAdhoc);
+    if (adhocInput) {
+      adhocInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); submitAdhoc(); }
+      });
+    }
+
+    // Pool filter — preserve focus on the input across re-renders.
+    const search = document.getElementById("ed-pool-search");
+    if (search) {
+      search.addEventListener("input", () => {
+        st.poolFilter = search.value;
+        renderChainsEditor();
+        const fresh = document.getElementById("ed-pool-search");
+        if (fresh) {
+          fresh.focus();
+          fresh.setSelectionRange(fresh.value.length, fresh.value.length);
+        }
+      });
+    }
+  }
+
+  function syncActiveFromDom() {
+    const st = editorState;
+    const activeEl = document.getElementById("ed-active");
+    if (!activeEl || !st) return;
+    const seen = new Set();
+    const names = [];
+    activeEl.querySelectorAll(".pill").forEach((el) => {
+      const n = el.dataset.name;
+      if (n && !seen.has(n)) { seen.add(n); names.push(n); }
+    });
+    st.chains[st.active] = names;
+    st.dirty = true;
+    renderChainsEditor();
+  }
+
+  async function saveChainsEditor() {
+    const st = editorState;
+    if (!st || st.saving) return;
+    // Empty chains aren't allowed by the server — flag locally so the user can fix.
+    const empties = Object.entries(st.chains).filter(([_, v]) => v.length === 0).map(([k]) => k);
+    if (empties.length) {
+      st.error = `Пустые цепочки: ${empties.join(", ")}`;
+      renderChainsEditor();
+      return;
+    }
+    st.saving = true; st.error = null;
+    renderChainsEditor();
+    try {
+      const resp = await fetch("/v1/chains", {
+        method: "PUT",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ chains: st.chains, default: st.default }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+      // Success: drop editor, force refresh of stats so providers view shows new shape.
+      editorState = null;
+      try { await refresh(); } catch (_) {}
+      alert("Цепочки обновлены. Бэкап: " + (data.backup || "—"));
+    } catch (e) {
+      st.error = e.message || String(e);
+      st.saving = false;
+      renderChainsEditor();
+    }
+  }
+
+  // Minimal markdown→HTML renderer. Handles headings, bold, italics, inline code,
+  // code fences, lists, hr, links, paragraphs — enough for Gemini audit output.
+  function escapeHtml(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function mdToHtml(md) {
+    if (!md) return "";
+    // Extract fenced code blocks first, replace with placeholders.
+    const codeBlocks = [];
+    md = md.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_m, lang, body) => {
+      codeBlocks.push(`<pre><code>${escapeHtml(body)}</code></pre>`);
+      return `\u0000CODE${codeBlocks.length - 1}\u0000`;
+    });
+    md = escapeHtml(md);
+    // Inline code
+    md = md.replace(/`([^`\n]+)`/g, (_m, c) => `<code>${c}</code>`);
+    // Bold / italic (bold first so remaining single * / _ pairs become italic)
+    md = md.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+    md = md.replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+    md = md.replace(/(^|[\s(])_([^_\n]+)_/g, "$1<em>$2</em>");
+    // Links [text](url)
+    md = md.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    // Headings
+    md = md.replace(/^### (.+)$/gm, "<h3>$1</h3>");
+    md = md.replace(/^## (.+)$/gm, "<h2>$1</h2>");
+    md = md.replace(/^# (.+)$/gm, "<h1>$1</h1>");
+    // Horizontal rule
+    md = md.replace(/^---\s*$/gm, "<hr>");
+    // Lists: group consecutive "- " lines into <ul>
+    const lines = md.split("\n");
+    const out = [];
+    let inList = false;
+    let para = [];
+    const flushPara = () => {
+      if (para.length) {
+        const joined = para.join(" ").trim();
+        if (joined) out.push(`<p>${joined}</p>`);
+        para = [];
+      }
+    };
+    const isTableRow = (s) => /^\|.*\|\s*$/.test(s);
+    const isTableSep = (s) => /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(s);
+    const splitCells = (s) => s.replace(/^\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim());
+    for (let i = 0; i < lines.length; i++) {
+      const ln = lines[i];
+      const trimmed = ln.trim();
+      // GFM pipe table: header row, separator row, body rows
+      if (isTableRow(trimmed) && i + 1 < lines.length && isTableSep(lines[i + 1].trim())) {
+        if (inList) { out.push("</ul>"); inList = false; }
+        flushPara();
+        const header = splitCells(trimmed);
+        i += 2; // skip separator
+        const bodyRows = [];
+        while (i < lines.length && isTableRow(lines[i].trim())) {
+          bodyRows.push(splitCells(lines[i].trim()));
+          i++;
+        }
+        i--;
+        out.push("<table><thead><tr>" +
+          header.map((h) => `<th>${h}</th>`).join("") +
+          "</tr></thead><tbody>" +
+          bodyRows.map((r) => "<tr>" + r.map((c) => `<td>${c}</td>`).join("") + "</tr>").join("") +
+          "</tbody></table>");
+        continue;
+      }
+      if (/^- /.test(trimmed)) {
+        flushPara();
+        if (!inList) { out.push("<ul>"); inList = true; }
+        out.push(`<li>${trimmed.slice(2)}</li>`);
+      } else if (/^\d+\. /.test(trimmed)) {
+        flushPara();
+        if (!inList) { out.push("<ol>"); inList = true; }
+        out.push(`<li>${trimmed.replace(/^\d+\.\s*/, "")}</li>`);
+      } else if (trimmed === "") {
+        if (inList) { out.push("</ul>"); inList = false; }
+        flushPara();
+      } else if (/^<(h[1-3]|hr|pre)/.test(trimmed)) {
+        if (inList) { out.push("</ul>"); inList = false; }
+        flushPara();
+        out.push(trimmed);
+      } else {
+        if (inList) { out.push("</ul>"); inList = false; }
+        para.push(trimmed);
+      }
+    }
+    if (inList) out.push("</ul>");
+    flushPara();
+    let html = out.join("\n");
+    html = html.replace(/\u0000CODE(\d+)\u0000/g, (_m, i) => codeBlocks[+i]);
+    return html;
+  }
+
+  function fmtAuditDate(dateStr, ts) {
+    const d = new Date(ts * 1000);
+    const time = `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+    return `${dateStr} · ${time}`;
+  }
+
+  async function fetchAuditList() {
+    try {
+      const r = await fetchJSON("/v1/audit");
+      auditList = r.audits || [];
+      return auditList;
+    } catch (e) {
+      if (e.status === 401) throw e;
+      auditList = [];
+      return [];
+    }
+  }
+
+  async function fetchAuditBody(date) {
+    try {
+      const r = await fetchJSON(`/v1/audit/${encodeURIComponent(date)}`);
+      auditBody = r;
+    } catch (e) {
+      if (e.status === 401) throw e;
+      auditBody = { date, markdown: `_отчёт за ${date} не найден_` };
+    }
+  }
+
+  function findPrevAuditDate(date) {
+    // auditList отсортирован сервером DESC → предыдущий = позиция +1
+    const idx = auditList.findIndex((a) => a.date === date);
+    if (idx < 0 || idx + 1 >= auditList.length) return null;
+    return auditList[idx + 1].date;
+  }
+
+  async function loadPrevAuditBody() {
+    if (!activeAuditDate) { auditPrevBody = null; return; }
+    const prev = findPrevAuditDate(activeAuditDate);
+    if (!prev) { auditPrevBody = null; return; }
+    try {
+      const r = await fetchJSON(`/v1/audit/${encodeURIComponent(prev)}`);
+      auditPrevBody = r;
+    } catch (e) {
+      if (e.status === 401) throw e;
+      auditPrevBody = { date: prev, markdown: "" };
+    }
+  }
+
+  // Простой line-diff через LCS. Возвращает [{type: ' '|'+'|'-', text}, ...].
+  // Для отчётов ~100-200 строк работает мгновенно (O(m*n) памяти).
+  function lineDiff(oldText, newText) {
+    const a = (oldText || "").split("\n");
+    const b = (newText || "").split("\n");
+    const m = a.length, n = b.length;
+    const dp = [];
+    for (let i = 0; i <= m; i++) dp.push(new Int32Array(n + 1));
+    for (let i = m - 1; i >= 0; i--) {
+      for (let j = n - 1; j >= 0; j--) {
+        if (a[i] === b[j]) dp[i][j] = dp[i + 1][j + 1] + 1;
+        else dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+    const out = [];
+    let i = 0, j = 0;
+    while (i < m && j < n) {
+      if (a[i] === b[j]) { out.push({ type: " ", text: a[i] }); i++; j++; }
+      else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ type: "-", text: a[i] }); i++; }
+      else { out.push({ type: "+", text: b[j] }); j++; }
+    }
+    while (i < m) out.push({ type: "-", text: a[i++] });
+    while (j < n) out.push({ type: "+", text: b[j++] });
+    return out;
+  }
+
+  function stripTrailer(md) {
+    // Убираем «_Сгенерировано X_» футер, чтобы diff не подсвечивал таймстамп каждый день
+    const idx = md.lastIndexOf("\n---\n");
+    if (idx < 0) return md;
+    const tail = md.slice(idx + 5);
+    if (/_Сгенерировано /.test(tail)) return md.slice(0, idx);
+    return md;
+  }
+
+  function renderDiffHtml() {
+    if (!auditBody) return `<div class="diff-empty">отчёт не выбран</div>`;
+    if (!auditPrevBody) {
+      return `<div class="diff-empty">это первый отчёт — сравнивать не с чем</div>`;
+    }
+    const prev = stripTrailer(auditPrevBody.markdown || "");
+    const curr = stripTrailer(auditBody.markdown || "");
+    const rows = lineDiff(prev, curr);
+    const allSame = rows.every((r) => r.type === " ");
+    if (allSame) {
+      return `<div class="diff-empty">отчёт идентичен предыдущему (${auditPrevBody.date})</div>`;
+    }
+    const html = rows.map((r) => {
+      const cls = r.type === "+" ? "add" : r.type === "-" ? "rem" : "ctx";
+      const prefix = r.type === " " ? "  " : r.type + " ";
+      return `<span class="ln ${cls}">${escapeHtml(prefix + r.text)}</span>`;
+    }).join("");
+    return `<div class="diff">${html}</div>`;
+  }
+
+  async function runAuditNow() {
+    if (auditRunning) return;
+    auditRunning = true;
+    renderAudit();
+    try {
+      const url = `/v1/audit/run?chain=${encodeURIComponent(auditChain)}`;
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      await fetchAuditList();
+      activeAuditDate = data.date;
+      auditPrevBody = null;
+      await fetchAuditBody(activeAuditDate);
+    } catch (e) {
+      showError("аудит не удалось запустить: " + (e.message || e));
+    } finally {
+      auditRunning = false;
+      renderAudit();
+    }
+  }
+
+  function renderAudit() {
+    const hasList = auditList && auditList.length > 0;
+    const items = hasList
+      ? auditList.map((a) => {
+          const active = a.date === activeAuditDate ? "active" : "";
+          return `
+            <button class="audit-item ${active}" data-date="${a.date}">
+              <span>${a.date}</span>
+              <span class="ts">${fmtAuditDate(a.date, a.created_at)}</span>
+            </button>
+          `;
+        }).join("")
+      : `<div class="empty" style="padding:20px 8px">отчётов ещё нет. Запусти вручную.</div>`;
+
+    let bodyHtml;
+    if (!auditBody) {
+      bodyHtml = hasList
+        ? `<div class="empty">выбери дату слева</div>`
+        : `<div class="empty">первый отчёт появится после ручного запуска или в 00:03 PT</div>`;
+    } else {
+      const prevDate = findPrevAuditDate(activeAuditDate);
+      const diffBtn = prevDate
+        ? `<button class="diff-toggle ${auditDiffMode ? 'on' : ''}" id="audit-diff-toggle" title="показать построчный diff с предыдущим отчётом (${prevDate})">${auditDiffMode ? "✕ скрыть diff" : "diff с " + prevDate}</button>`
+        : `<span title="нет предыдущего отчёта для сравнения" style="color:var(--muted); font-size:11px; font-family:var(--mono)">первый отчёт — нечего сравнивать</span>`;
+      const head = `
+        <div class="diff-head">
+          <span class="vs">${auditDiffMode && prevDate ? `<b>${prevDate}</b> → <b>${auditBody.date}</b>` : auditBody.date}</span>
+          ${diffBtn}
+        </div>
+      `;
+      const main = auditDiffMode
+        ? renderDiffHtml()
+        : mdToHtml(auditBody.markdown);
+      bodyHtml = head + main;
+    }
+
+    // Дропдаун выбора цепочки/провайдера для ручного запуска
+    const stats = latestStats;
+    const auditChainSelect = stats
+      ? `<select id="audit-chain-select" title="цепочка или провайдер для отчёта">${buildAuditChainOptions(stats)}</select>`
+      : "";
+
+    contentEl.innerHTML = `
+      <div class="audit-layout">
+        <div class="audit-sidebar">
+          <div class="hd">
+            <span class="title">отчёты</span>
+            <button class="run" id="audit-run" ${auditRunning ? "disabled" : ""} title="запустить аудит прямо сейчас через выбранную цепочку">${auditRunning ? "…" : "запустить"}</button>
+          </div>
+          <div class="audit-chain-row" style="padding:0 8px 8px; font-family:var(--mono); font-size:11px; color:var(--muted);">
+            ${auditChainSelect ? `<label style="display:flex; gap:6px; align-items:center;"><span>модель:</span>${auditChainSelect}</label>` : "<span>модель: code (default)</span>"}
+          </div>
+          <div class="audit-list">${items}</div>
+        </div>
+        <div class="audit-body">${bodyHtml}</div>
+      </div>
+    `;
+
+    const chainSel = $("audit-chain-select");
+    if (chainSel) chainSel.addEventListener("change", () => { auditChain = chainSel.value; });
+
+    const runBtn = $("audit-run");
+    if (runBtn) runBtn.addEventListener("click", runAuditNow);
+
+    const diffBtn = $("audit-diff-toggle");
+    if (diffBtn) diffBtn.addEventListener("click", async () => {
+      if (!auditDiffMode) {
+        // включаем diff — подгрузим предыдущий если не загружен
+        if (!auditPrevBody || auditPrevBody.date !== findPrevAuditDate(activeAuditDate)) {
+          await loadPrevAuditBody();
+        }
+      }
+      auditDiffMode = !auditDiffMode;
+      renderAudit();
+    });
+
+    contentEl.querySelectorAll(".audit-item").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const date = btn.dataset.date;
+        if (!date || date === activeAuditDate) return;
+        activeAuditDate = date;
+        auditPrevBody = null;  // инвалидируем кэш diff при смене активной даты
+        await fetchAuditBody(date);
+        if (auditDiffMode) await loadPrevAuditBody();
+        renderAudit();
+      });
+    });
+  }
+
+  function buildAuditChainOptions(stats) {
+    const opts = [];
+    const chains = (stats && stats.chains) || {};
+    const usage = (stats && stats.usage) || [];
+    const chainNames = Object.keys(chains);
+    if (chainNames.length) {
+      opts.push(`<optgroup label="цепочки">`);
+      for (const n of chainNames) {
+        const sel = auditChain === n ? "selected" : "";
+        opts.push(`<option value="${n}" ${sel}>${n} (${chains[n].length})</option>`);
+      }
+      opts.push(`</optgroup>`);
+    }
+    if (usage.length) {
+      opts.push(`<optgroup label="конкретные провайдеры">`);
+      for (const u of usage) {
+        const sel = auditChain === u.provider ? "selected" : "";
+        opts.push(`<option value="${u.provider}" ${sel}>${u.provider}</option>`);
+      }
+      opts.push(`</optgroup>`);
+    }
+    return opts.join("");
+  }
+
+  function buildChatModelOptions(stats) {
+    const opts = [];
+    const chains = (stats && stats.chains) || {};
+    const usage = (stats && stats.usage) || [];
+    const chainNames = Object.keys(chains);
+    if (chainNames.length) {
+      opts.push(`<optgroup label="цепочки">`);
+      for (const n of chainNames) {
+        const sel = chatState.model === n ? "selected" : "";
+        opts.push(`<option value="${n}" ${sel}>${n} (${chains[n].length} провайдеров)</option>`);
+      }
+      opts.push(`</optgroup>`);
+    }
+    if (usage.length) {
+      opts.push(`<optgroup label="конкретные провайдеры">`);
+      for (const u of usage) {
+        const sel = chatState.model === u.provider ? "selected" : "";
+        opts.push(`<option value="${u.provider}" ${sel}>${u.provider}</option>`);
+      }
+      opts.push(`</optgroup>`);
+    }
+    return opts.join("");
+  }
+
+  // MoA / SC: блок со всеми proposer/sample-ответами, разворачивается по клику.
+  // Записи с error показываются компактно (label · причина), остальные —
+  // полным телом ответа с латентностью и числом токенов.
+  // Для MoA label = имя провайдера, для SC label = "сэмпл N · модель · t=T".
+  function renderProposalsBlock(m) {
+    if (!m.proposals || !m.proposals.length) return "";
+    const ok = m.proposals.filter((p) => !p.error);
+    const failed = m.proposals.filter((p) => p.error);
+    const aggHint = m.aggregatorChain
+      ? ` · aggregator=${escapeHtml(m.aggregatorChain)}`
+      : "";
+    const kindLabel = m.ensembleKind === "sc" ? "сэмплы" : "ответы моделей";
+    const summary = `${kindLabel}: ${ok.length}✓ / ${failed.length}✗ из ${m.proposals.length}${aggHint}`;
+    const okHtml = ok.map((p) => {
+      const lat = p.latency_ms ? `${(p.latency_ms / 1000).toFixed(1)}s` : "?";
+      const tok = p.completion_tokens ? ` · ${p.completion_tokens} tok` : "";
+      const label = p.label || p.provider;
+      return `
+        <div class="proposal">
+          <div class="phead"><b>${escapeHtml(label)}</b><span class="pmeta">${lat}${tok}</span></div>
+          <div class="pbody">${escapeHtml(p.text || "")}</div>
+        </div>
+      `;
+    }).join("");
+    const failHtml = failed.length
+      ? `<div class="proposal-failed">упали: ${failed.map((p) => `<span title="${escapeHtml(p.error)}">${escapeHtml(p.label || p.provider)}</span>`).join(", ")}</div>`
+      : "";
+    return `
+      <details class="proposals">
+        <summary>${summary}</summary>
+        <div class="proposals-body">
+          ${okHtml}
+          ${failHtml}
+        </div>
+      </details>
+    `;
+  }
+
+  // Deep Search: блок с планом подзапросов, trace-шагами и списком источников.
+  // Разворачивается по клику, показывает: subquestions → шаги (plan/search/
+  // synthesize/critique) с latency → итоговый sources[] с URL-ами.
+  function renderDeepSearchBlock(m) {
+    if (!m.deepSearch) return "";
+    const ds = m.deepSearch;
+    const subqs = ds.subquestions || [];
+    const trace = ds.trace || [];
+    const sources = ds.sources || [];
+    const iterations = ds.iterations || 1;
+    const totalMs = trace.reduce((a, t) => a + (t.latency_ms || 0), 0);
+    const summary = `research: ${subqs.length} подзапросов · ${trace.length} шагов · ${sources.length} URL-источников · ${iterations} итер · ${(totalMs / 1000).toFixed(1)}s total`;
+
+    const subqsHtml = subqs.length
+      ? `<div class="ds-subqs"><b>Подзапросы:</b><ol>${subqs.map((q) => `<li>${escapeHtml(q)}</li>`).join("")}</ol></div>`
+      : "";
+
+    const traceHtml = `<div class="ds-trace"><b>Trace:</b><ul>${trace.map((t) => {
+      const lat = t.latency_ms ? `${(t.latency_ms / 1000).toFixed(1)}s` : "?";
+      const prov = t.provider ? ` via <span class="prov">${escapeHtml(t.provider)}</span>` : "";
+      let detail = "";
+      if (t.step === "plan") detail = ` → ${(t.subquestions || []).length} подзапросов`;
+      else if (t.step === "search") detail = ` · "${escapeHtml((t.subq || "").slice(0, 60))}"${t.urls_found ? ` · ${t.urls_found} URL` : ""}${t.error ? ` · <span style="color:var(--bad)">ERR: ${escapeHtml(t.error)}</span>` : ""}`;
+      else if (t.step === "synthesize") detail = ` · ${t.draft_chars || 0} chars${t.iteration ? ` · iter ${t.iteration}` : ""}`;
+      else if (t.step === "critique") detail = ` · ${t.gaps_found || 0} пробелов`;
+      return `<li><b>${escapeHtml(t.step)}</b>${prov} · ${lat}${detail}</li>`;
+    }).join("")}</ul></div>`;
+
+    const sourcesHtml = sources.length
+      ? `<div class="ds-sources"><b>Источники:</b><ol>${sources.map((s) => `<li><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.url)}</a>${s.subq ? ` <span class="pmeta">(${escapeHtml((s.subq || "").slice(0, 60))})</span>` : ""}</li>`).join("")}</ol></div>`
+      : "";
+
+    return `
+      <details class="proposals">
+        <summary>${summary}</summary>
+        <div class="proposals-body ds-body">
+          ${subqsHtml}
+          ${traceHtml}
+          ${sourcesHtml}
+        </div>
+      </details>
+    `;
+  }
+
+  // Обновляем DOM стримящегося сообщения в месте, чтобы не перерендеривать
+  // всё дерево на каждом чанке (иначе слетает фокус и выделение).
+  function updateStreamingDom(msg) {
+    const body = document.getElementById("streaming-body");
+    if (body) body.textContent = msg.content || "";
+    const who = document.getElementById("streaming-who");
+    if (who && msg.provider) {
+      who.innerHTML = `ассистент<span class="prov">${escapeHtml(msg.provider)}${msg.chain ? ` · chain=${escapeHtml(msg.chain)}` : ""}</span>`;
+    }
+    // Thinking block: if it exists in DOM, patch in-place; otherwise re-render once
+    // to inject the <details> element (happens on first reasoning_content chunk).
+    if (msg.thinking) {
+      const thinkEl = document.getElementById("streaming-thinking");
+      if (thinkEl) {
+        thinkEl.textContent = msg.thinking;
+      } else {
+        renderChat();
+        return;
+      }
+    }
+    const msgEl = $("chat-messages");
+    if (msgEl) msgEl.scrollTop = msgEl.scrollHeight;
+  }
+
+  async function sendChatMessage() {
+    if (chatState.sending) return;
+    const taEl = $("chat-text");
+    const prompt = (taEl && taEl.value.trim()) || "";
+    if (!prompt) return;
+    const isMoA = chatState.model === "moa";
+    const isSC = chatState.model === "sc";
+    const isDeepSearch = chatState.model === "deep_search";
+    const isEnsemble = isMoA || isSC;
+    const isNonStream = isEnsemble || isDeepSearch;
+    chatState.sending = true;
+    chatState.messages.push({ role: "user", content: prompt });
+    chatState.draft = "";
+    const assistantMsg = { role: "assistant", content: "", thinking: "", streaming: !isNonStream };
+    if (isEnsemble) assistantMsg.ensemblePending = chatState.model;
+    if (isDeepSearch) assistantMsg.deepSearchPending = true;
+    chatState.messages.push(assistantMsg);
+    renderChat();
+
+    // MoA / SC / deep_search: non-streaming, в ответе — финальный синтез + метаданные.
+    if (isNonStream) {
+      try {
+        const body = {
+          model: effectiveModelId(),
+          messages: chatState.messages
+            .filter((m) => m !== assistantMsg && m.role !== "error")
+            .map((m) => ({ role: m.role, content: m.content })),
+          max_tokens: Number($("chat-maxtok")?.value) || 1000,
+          temperature: 0.7,
+          stream: false,
+        };
+        if (chatState.reasoningEffort && chatState.reasoningEffort !== "auto") {
+          body.reasoning_effort = chatState.reasoningEffort;
+        }
+        const resp = await fetch("/v1/chat/completions", {
+          method: "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          const msg = data?.error?.message || `HTTP ${resp.status}`;
+          throw new Error(msg);
+        }
+        assistantMsg.content = data?.choices?.[0]?.message?.content || "(пустой ответ)";
+        assistantMsg.provider = data?.provider;
+        assistantMsg.chain = data?.chain;
+        assistantMsg.finishReason = data?.choices?.[0]?.finish_reason;
+        if (isMoA) {
+          assistantMsg.proposals = (data?.moa?.proposals || []).map((p) => ({
+            ...p,
+            label: p.provider,
+          }));
+          assistantMsg.aggregatorChain = data?.moa?.aggregator_chain;
+          assistantMsg.ensembleKind = "moa";
+        } else if (isSC) {
+          const base = data?.sc?.base_provider || "?";
+          assistantMsg.proposals = (data?.sc?.samples || []).map((s) => ({
+            ...s,
+            label: `сэмпл ${s.sample_index + 1} · ${base}${s.temperature ? ` · t=${s.temperature}` : ""}`,
+          }));
+          assistantMsg.aggregatorChain = data?.sc?.aggregator_chain;
+          assistantMsg.ensembleKind = "sc";
+        } else {
+          // deep_search
+          assistantMsg.deepSearch = data?.deep_search || {};
+        }
+      } catch (e) {
+        const idx = chatState.messages.indexOf(assistantMsg);
+        if (idx !== -1) chatState.messages.splice(idx, 1);
+        chatState.messages.push({ role: "error", content: e.message || String(e) });
+      } finally {
+        assistantMsg.streaming = false;
+        assistantMsg.ensemblePending = null;
+        assistantMsg.deepSearchPending = false;
+        chatState.sending = false;
+        renderChat();
+      }
+      return;
+    }
+
+    try {
+      const body = {
+        model: effectiveModelId(),
+        messages: chatState.messages
+          .filter((m) => m !== assistantMsg && m.role !== "error")
+          .map((m) => ({ role: m.role, content: m.content })),
+        max_tokens: Number($("chat-maxtok")?.value) || 1000,
+        temperature: 0.7,
+        stream: true,
+      };
+      if (chatState.reasoningEffort && chatState.reasoningEffort !== "auto") {
+        body.reasoning_effort = chatState.reasoningEffort;
+      }
+      const resp = await fetch("/v1/chat/completions", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok || !resp.body) {
+        const text = await resp.text().catch(() => "");
+        throw new Error(`HTTP ${resp.status}: ${text.slice(0, 300)}`);
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let streamError = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let sep;
+        while ((sep = buffer.indexOf("\n\n")) !== -1) {
+          const raw = buffer.slice(0, sep);
+          buffer = buffer.slice(sep + 2);
+          if (!raw.trim()) continue;
+
+          let eventType = "message";
+          let dataStr = "";
+          for (const line of raw.split("\n")) {
+            if (line.startsWith("event:")) eventType = line.slice(6).trim();
+            else if (line.startsWith("data:")) {
+              dataStr += (dataStr ? "\n" : "") + line.slice(5).replace(/^ /, "");
+            }
+          }
+          if (!dataStr) continue;
+
+          if (eventType === "neurogate") {
+            try {
+              const meta = JSON.parse(dataStr);
+              assistantMsg.provider = meta.provider;
+              assistantMsg.chain = meta.chain;
+              updateStreamingDom(assistantMsg);
+            } catch {}
+            continue;
+          }
+          if (dataStr === "[DONE]") continue;
+
+          let obj;
+          try { obj = JSON.parse(dataStr); } catch { continue; }
+          if (obj && obj.error) {
+            streamError = obj.error.message || JSON.stringify(obj.error);
+            continue;
+          }
+          const d = obj?.choices?.[0]?.delta || {};
+          // Reasoning models stream thinking via either `reasoning_content` (Z.AI, OR, OpenAI spec)
+          // or `reasoning` (Groq's gpt-oss — confirmed 2026-04-21). Inline `<think>…</think>`
+          // inside delta.content (Qwen3-32b) is peeled out below. All three go to .thinking.
+          const thinkDelta = d.reasoning_content || d.reasoning;
+          if (thinkDelta) {
+            assistantMsg.thinking += thinkDelta;
+            updateStreamingDom(assistantMsg);
+          }
+          if (d.content) {
+            assistantMsg.content += d.content;
+            // Extract any <think> blocks that arrived mixed into content.
+            const m = assistantMsg.content.match(/<think>([\s\S]*?)<\/think>/i);
+            if (m) {
+              assistantMsg.thinking += m[1];
+              assistantMsg.content = assistantMsg.content.replace(m[0], "").trimStart();
+            }
+            updateStreamingDom(assistantMsg);
+          }
+        }
+      }
+
+      if (streamError) throw new Error(streamError);
+      if (!assistantMsg.content) {
+        assistantMsg.content = "(пустой ответ)";
+      }
+    } catch (e) {
+      // Удаляем наполовину заполненную assistant-реплику, вместо неё — ошибка.
+      const idx = chatState.messages.indexOf(assistantMsg);
+      if (idx !== -1) chatState.messages.splice(idx, 1);
+      chatState.messages.push({ role: "error", content: e.message || String(e) });
+    } finally {
+      assistantMsg.streaming = false;
+      chatState.sending = false;
+      renderChat();
+    }
+  }
+
+  function renderChat() {
+    const stats = latestStats;
+    const modelOptions = buildChatModelOptions(stats);
+    if (!chatState.model && stats && stats.default_chain) {
+      chatState.model = stats.default_chain;
+    }
+
+    const msgHtml = chatState.messages.length
+      ? chatState.messages.map((m) => {
+          const cls = m.role === "user" ? "user" : (m.role === "error" ? "err" : "");
+          const whoId = m.streaming ? ' id="streaming-who"' : "";
+          const bodyId = m.streaming ? ' id="streaming-body"' : "";
+          const who = m.role === "user"
+            ? "вы"
+            : m.role === "error"
+              ? "ошибка"
+              : `ассистент${m.provider ? `<span class="prov">${m.provider}${m.chain ? ` · chain=${m.chain}` : ""}</span>` : ""}`;
+          let bodyText;
+          const bodyExtraCls = (m.role !== "user" && m.role !== "error") ? " md" : "";
+          if (m.content) {
+            const truncWarn = m.finishReason === "length"
+              ? '<div style="margin-top:8px;padding:4px 8px;background:rgba(210,153,34,0.12);border-left:3px solid var(--warn);font-size:11px;font-family:var(--mono);color:var(--warn)">⚠ ответ обрезан по max_tokens — подними лимит</div>'
+              : "";
+            const rendered = (m.role === "user" || m.role === "error")
+              ? escapeHtml(m.content)
+              : mdToHtml(m.content);
+            bodyText = rendered + truncWarn;
+          } else if (m.ensemblePending === "moa") {
+            bodyText = '<span style="color:var(--muted)">MoA: опрашиваю 25 моделей параллельно… синтез после сбора ответов</span>';
+          } else if (m.ensemblePending === "sc") {
+            bodyText = '<span style="color:var(--muted)">SC: беру 5 сэмплов одной модели с разной temperature… консолидация после сбора</span>';
+          } else if (m.deepSearchPending) {
+            bodyText = '<span style="color:var(--muted)">Deep Search: plan → search → synthesize → critique. Обычно 15-40с…</span>';
+          } else if (m.streaming) {
+            bodyText = '<span style="color:var(--muted)">…</span>';
+          } else {
+            bodyText = "";
+          }
+          const thinkId = m.streaming ? ' id="streaming-thinking-wrap"' : "";
+          const thinkInnerId = m.streaming ? ' id="streaming-thinking"' : "";
+          const thinkingBlock = m.thinking
+            ? `<details class="thinking"${m.streaming ? ' open' : ''}${thinkId}><summary>размышления (${m.thinking.length} символов)</summary><div class="inner"${thinkInnerId}>${escapeHtml(m.thinking)}</div></details>`
+            : "";
+          const proposalsBlock = renderProposalsBlock(m);
+          const deepSearchBlock = renderDeepSearchBlock(m);
+          return `
+            <div class="chat-msg ${cls}">
+              <div class="who"${whoId}>${who}</div>
+              ${thinkingBlock}
+              <div class="body${bodyExtraCls}"${bodyId}>${bodyText}</div>
+              ${proposalsBlock}
+              ${deepSearchBlock}
+            </div>
+          `;
+        }).join("")
+      : `<div class="empty">задай вопрос выбранной цепочке или провайдеру</div>`;
+
+    const sendDisabled = chatState.sending ? "disabled" : "";
+    const sendLabel = chatState.sending ? "отправляю…" : "отправить";
+
+    contentEl.innerHTML = `
+      <div class="chat-layout">
+        <div class="chat-config">
+          <label>
+            <span>модель</span>
+            <select id="chat-model">${modelOptions}</select>
+          </label>
+          <label title="Произвольная модель в формате kind:model_id — собирает one-shot OpenAI-compat провайдера на лету. Ключ берётся из env сервера (OPENAI_API_KEY, GROQ_API_KEY, ...). Если поле пустое — используется select слева.">
+            <span>custom</span>
+            <input type="text" id="chat-custom-model" placeholder="openai:gpt-5-foo" style="width:200px" value="${escapeHtml(chatState.customModel || '')}" />
+          </label>
+          <label title="max_tokens для ответа">
+            <span>max_tokens</span>
+            <input type="number" id="chat-maxtok" value="1000" min="50" max="8000" step="50" style="width:90px" />
+          </label>
+          <label title="reasoning_effort: auto=не передавать флаг; none=выключить thinking; low/medium/high — глубина. Для не-reasoning моделей флаг автоматически стрипится.">
+            <span>🧠 рассуждение</span>
+            <select id="chat-reasoning" style="min-width:auto">
+              <option value="auto">авто</option>
+              <option value="none">выкл</option>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+            </select>
+          </label>
+          <label style="margin-left:auto">
+            <button class="send" id="chat-clear" style="background:var(--panel-2); color:var(--fg);">очистить</button>
+          </label>
+        </div>
+        <div class="chat-messages" id="chat-messages">${msgHtml}</div>
+        <div class="chat-input">
+          <textarea id="chat-text" placeholder="Введи сообщение. Enter — отправить, Shift+Enter — перенос строки">${escapeHtml(chatState.draft || "")}</textarea>
+          <button class="send" id="chat-send" ${sendDisabled}>${sendLabel}</button>
+        </div>
+        <div class="chat-hint">запрос идёт через POST /v1/chat/completions — fallback по цепочке работает как в API</div>
+      </div>
+    `;
+
+    const modelSel = $("chat-model");
+    if (modelSel) modelSel.addEventListener("change", () => { chatState.model = modelSel.value; });
+
+    const customEl = $("chat-custom-model");
+    if (customEl) {
+      customEl.addEventListener("input", () => {
+        chatState.customModel = customEl.value;
+      });
+    }
+
+    const reasoningSel = $("chat-reasoning");
+    if (reasoningSel) {
+      reasoningSel.value = chatState.reasoningEffort;
+      reasoningSel.addEventListener("change", () => { chatState.reasoningEffort = reasoningSel.value; });
+    }
+
+    const textEl = $("chat-text");
+    if (textEl) {
+      textEl.addEventListener("input", () => { chatState.draft = textEl.value; });
+      textEl.addEventListener("keydown", (e) => {
+        // Enter — отправить, Shift+Enter — перенос строки (IME composition не трогаем).
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+          e.preventDefault();
+          sendChatMessage();
+        }
+      });
+      textEl.focus();
+    }
+
+    const sendBtn = $("chat-send");
+    if (sendBtn) sendBtn.addEventListener("click", sendChatMessage);
+
+    const clearBtn = $("chat-clear");
+    if (clearBtn) clearBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      chatState.messages = [];
+      renderChat();
+    });
+
+    const msgEl = $("chat-messages");
+    if (msgEl) msgEl.scrollTop = msgEl.scrollHeight;
+  }
+
+  function renderDebate() {
+    const aggregatorOptions = ["reasoning_quality", "reasoning_deep", "quality", "chat"]
+      .map((c) => `<option value="${c}"${c === debateState.aggregatorChain ? " selected" : ""}>${c}</option>`)
+      .join("");
+    const agentsOptions = [2, 3, 4, 5, 6]
+      .map((n) => `<option value="${n}"${n === debateState.agentsN ? " selected" : ""}>${n}</option>`)
+      .join("");
+    const roundsOptions = [1, 2, 3, 4]
+      .map((n) => `<option value="${n}"${n === debateState.roundsN ? " selected" : ""}>${n}</option>`)
+      .join("");
+
+    const sendDisabled = debateState.running ? "disabled" : "";
+    const sendLabel = debateState.running ? "идут дебаты…" : "старт";
+    const stopBtn = debateState.running
+      ? `<button class="send" id="debate-stop" style="background:var(--panel-2); color:var(--fg);">стоп</button>`
+      : "";
+
+    contentEl.innerHTML = `
+      <div class="chat-layout">
+        <div class="chat-config">
+          <label><span>агентов</span><select id="debate-agents">${agentsOptions}</select></label>
+          <label><span>раундов</span><select id="debate-rounds">${roundsOptions}</select></label>
+          <label><span>aggregator</span><select id="debate-agg">${aggregatorOptions}</select></label>
+          <label style="margin-left:auto">${stopBtn}</label>
+        </div>
+        <div class="chat-messages" id="debate-transcript"></div>
+        <div class="chat-input">
+          <textarea id="debate-text" placeholder="Вопрос для дебатов. Каждая модель ответит, увидит чужие ответы, перепишет свой. Аггрегатор синтезирует финал.">${escapeHtml(debateState.draft || "")}</textarea>
+          <button class="send" id="debate-send" ${sendDisabled}>${sendLabel}</button>
+        </div>
+        <div class="chat-hint">POST /v1/chat/completions?model=debate&stream=true — события приходят по мере готовности каждого агента</div>
+      </div>
+    `;
+
+    const agentsSel = $("debate-agents");
+    if (agentsSel) agentsSel.addEventListener("change", () => { debateState.agentsN = parseInt(agentsSel.value, 10); });
+    const roundsSel = $("debate-rounds");
+    if (roundsSel) roundsSel.addEventListener("change", () => { debateState.roundsN = parseInt(roundsSel.value, 10); });
+    const aggSel = $("debate-agg");
+    if (aggSel) aggSel.addEventListener("change", () => { debateState.aggregatorChain = aggSel.value; });
+
+    const textEl = $("debate-text");
+    if (textEl) {
+      textEl.addEventListener("input", () => { debateState.draft = textEl.value; });
+      textEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+          e.preventDefault();
+          sendDebateMessage();
+        }
+      });
+      if (!debateState.running) textEl.focus();
+    }
+
+    const sendBtn = $("debate-send");
+    if (sendBtn) sendBtn.addEventListener("click", sendDebateMessage);
+    const stopEl = $("debate-stop");
+    if (stopEl) stopEl.addEventListener("click", () => {
+      if (debateState.abort) debateState.abort.abort();
+    });
+
+    redrawDebateTranscript();
+  }
+
+  function debateAgentColor(name) {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+    const hue = h % 360;
+    return { border: `hsl(${hue} 60% 55%)`, bg: `hsla(${hue}, 50%, 50%, 0.08)`, badge: `hsl(${hue} 60% 45%)` };
+  }
+
+  function debateAgentInitial(name) {
+    const tail = name.includes(":") ? name.split(":")[1] : name;
+    return (tail[0] || "?").toUpperCase();
+  }
+
+  function redrawDebateTranscript() {
+    const root = $("debate-transcript");
+    if (!root) return;
+    if (!debateState.meta && !debateState.error && !debateState.userQuestion) {
+      root.innerHTML = `<div class="empty">введи вопрос — модели будут отвечать друг другу как в групповом чате, в конце aggregator подведёт итог</div>`;
+      return;
+    }
+    let html = "";
+
+    if (debateState.userQuestion) {
+      html += `<div class="dbg-msg dbg-user"><div class="dbg-bubble"><div class="dbg-who">ты</div><div class="dbg-body">${escapeHtml(debateState.userQuestion)}</div></div></div>`;
+    }
+
+    if (debateState.error) {
+      html += `<div class="dbg-msg"><div class="dbg-bubble" style="border-color:var(--err);background:rgba(220,80,80,0.08)"><div class="dbg-who" style="color:var(--err)">ошибка</div><div class="dbg-body">${escapeHtml(debateState.error)}</div></div></div>`;
+    }
+
+    if (debateState.meta) {
+      const m = debateState.meta;
+      html += `<div class="dbg-sep">участники: ${m.agents.map((a) => {
+        const c = debateAgentColor(a);
+        return `<span class="dbg-chip" style="border-color:${c.border};color:${c.badge}">${escapeHtml(a)}</span>`;
+      }).join(" ")}</div>`;
+
+      for (let r = 0; r < m.rounds; r++) {
+        const row = debateState.roundsData[r] || [];
+        const label = r === 0 ? "раунд 1 · независимые ответы" : `раунд ${r + 1} · правки с учётом критики`;
+        html += `<div class="dbg-sep dbg-round">— ${label} —</div>`;
+        const hasAny = row.some((x) => x);
+        const allDone = row.length === m.agents.length && row.every((x) => x);
+        m.agents.forEach((name, i) => {
+          const ev = row[i];
+          const c = debateAgentColor(name);
+          const initial = debateAgentInitial(name);
+          let body, meta = "";
+          let extraStyle = "";
+          if (ev === null || ev === undefined) {
+            // Show pending only after the round actually started (i.e. some agent
+            // already replied in this round, or we're past round 0 and prev round done)
+            const prevDone = r === 0 ? true : (debateState.roundsData[r - 1] || []).every((x) => x);
+            if (!prevDone && !hasAny) return; // hide placeholder for not-yet-started round
+            body = `<span class="dbg-typing"><span></span><span></span><span></span></span>`;
+            extraStyle = "opacity:.6";
+          } else if (ev.error) {
+            body = `<span style="color:var(--warn)">⚠ ${escapeHtml(ev.error)}</span>`;
+            meta = `${ev.latency_ms}мс`;
+          } else {
+            body = mdToHtml(ev.text || "");
+            meta = `${ev.latency_ms}мс · ${ev.prompt_tokens}+${ev.completion_tokens} ток`;
+          }
+          html += `<div class="dbg-msg" style="${extraStyle}">
+            <div class="dbg-avatar" style="background:${c.badge}" title="${escapeHtml(name)}">${initial}</div>
+            <div class="dbg-bubble" style="border-color:${c.border};background:${c.bg}">
+              <div class="dbg-who"><span style="color:${c.badge}">${escapeHtml(name)}</span>${meta ? `<span class="dbg-meta">${meta}</span>` : ""}</div>
+              <div class="dbg-body md">${body}</div>
+            </div>
+          </div>`;
+        });
+        if (allDone && r < m.rounds - 1) {
+          // implicit transition: peers will now read each other and revise
+        }
+      }
+    }
+
+    if (debateState.aggResult || debateState.aggCurrent) {
+      html += `<div class="dbg-sep dbg-round">— ведущий синтезирует итог —</div>`;
+      if (debateState.aggResult) {
+        const a = debateState.aggResult;
+        const meta = `${a.prompt_tokens || 0}+${a.completion_tokens || 0} ток`;
+        html += `<div class="dbg-msg dbg-agg">
+          <div class="dbg-avatar" style="background:var(--accent)">★</div>
+          <div class="dbg-bubble" style="border-color:var(--accent);background:rgba(80,160,220,0.08)">
+            <div class="dbg-who"><span style="color:var(--accent)">синтез · ${escapeHtml(a.provider)}</span><span class="dbg-meta">${meta}</span></div>
+            <div class="dbg-body md">${mdToHtml(a.text || "")}</div>
+          </div>
+        </div>`;
+      } else {
+        html += `<div class="dbg-msg dbg-agg" style="opacity:.6">
+          <div class="dbg-avatar" style="background:var(--accent)">★</div>
+          <div class="dbg-bubble" style="border-color:var(--accent);background:rgba(80,160,220,0.08)">
+            <div class="dbg-who"><span style="color:var(--accent)">синтез · ${escapeHtml(debateState.aggCurrent)}</span></div>
+            <div class="dbg-body"><span class="dbg-typing"><span></span><span></span><span></span></span></div>
+          </div>
+        </div>`;
+      }
+    }
+
+    root.innerHTML = html;
+    root.scrollTop = root.scrollHeight;
+  }
+
+  async function sendDebateMessage() {
+    if (debateState.running) return;
+    const text = (debateState.draft || "").trim();
+    if (!text) return;
+
+    debateState.running = true;
+    debateState.error = null;
+    debateState.meta = null;
+    debateState.roundsData = [];
+    debateState.aggResult = null;
+    debateState.aggCurrent = null;
+    debateState.userQuestion = text;
+    debateState.abort = new AbortController();
+    renderDebate();
+
+    const headers = { "Content-Type": "application/json", ...authHeaders() };
+    const url = `/v1/chat/completions?agents=${debateState.agentsN}&rounds=${debateState.roundsN}&aggregator=${encodeURIComponent(debateState.aggregatorChain)}`;
+    const body = JSON.stringify({
+      model: "debate",
+      stream: true,
+      messages: [{ role: "user", content: text }],
+    });
+
+    let resp;
+    try {
+      resp = await fetch(url, {
+        method: "POST",
+        headers,
+        body,
+        signal: debateState.abort.signal,
+      });
+    } catch (e) {
+      debateState.error = `сеть: ${e.message || e}`;
+      debateState.running = false;
+      renderDebate();
+      return;
+    }
+    if (!resp.ok) {
+      let detail = `${resp.status} ${resp.statusText}`;
+      try { detail = (await resp.text()) || detail; } catch (_) {}
+      debateState.error = detail;
+      debateState.running = false;
+      renderDebate();
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf("\n\n")) !== -1) {
+          const frame = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+          handleDebateFrame(frame);
+        }
+      }
+    } catch (e) {
+      if (e.name !== "AbortError") debateState.error = `стрим: ${e.message || e}`;
+    } finally {
+      debateState.running = false;
+      debateState.abort = null;
+      renderDebate();
+    }
+  }
+
+  function handleDebateFrame(frame) {
+    const lines = frame.split("\n");
+    let event = "message";
+    let data = "";
+    for (const line of lines) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      else if (line.startsWith("data:")) data += line.slice(5).trim();
+    }
+    if (!data || data === "[DONE]") return;
+    let ev;
+    try { ev = JSON.parse(data); } catch (_) { return; }
+    applyDebateEvent(ev);
+    redrawDebateTranscript();
+  }
+
+  function applyDebateEvent(ev) {
+    switch (ev.type) {
+      case "meta":
+        debateState.meta = ev;
+        debateState.roundsData = Array.from({ length: ev.rounds }, () =>
+          new Array(ev.agents.length).fill(null)
+        );
+        break;
+      case "round_start":
+        // No-op: row already exists from meta
+        break;
+      case "agent_start":
+        // Slot stays null until agent_done arrives
+        break;
+      case "agent_done": {
+        const r = ev.round;
+        const i = ev.agent_index;
+        if (debateState.roundsData[r]) debateState.roundsData[r][i] = ev;
+        break;
+      }
+      case "round_done":
+        break;
+      case "aggregator_start":
+        debateState.aggCurrent = ev.provider;
+        break;
+      case "aggregator_done":
+        debateState.aggResult = ev;
+        debateState.aggCurrent = null;
+        break;
+      case "aggregator_error":
+        // Try next; will be replaced by next aggregator_start
+        break;
+      case "error":
+        debateState.error = ev.message;
+        break;
+    }
+  }
+
+  // ───── Calls view ─────
+  function fmtRelativeTs(ts) {
+    if (!ts) return "—";
+    const now = Date.now() / 1000;
+    const dt = now - ts;
+    if (dt < 60) return `${Math.max(0, Math.round(dt))}s назад`;
+    if (dt < 3600) return `${Math.round(dt / 60)}m назад`;
+    if (dt < 86400) return `${Math.round(dt / 3600)}h назад`;
+    return `${Math.round(dt / 86400)}d назад`;
+  }
+
+  function fmtClockTs(ts) {
+    if (!ts) return "—";
+    try {
+      return new Date(ts * 1000).toLocaleTimeString([], { hour12: false });
+    } catch (_e) { return "—"; }
+  }
+
+  function fmtDurationMs(ms) {
+    if (ms == null) return "—";
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 10000) return `${(ms / 1000).toFixed(2)}s`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  }
+
+  function fmtTokens(n) {
+    if (n == null || n === 0) return "—";
+    if (n < 1000) return String(n);
+    if (n < 10000) return (n / 1000).toFixed(2) + "k";
+    if (n < 1_000_000) return Math.round(n / 1000) + "k";
+    return (n / 1_000_000).toFixed(2) + "M";
+  }
+
+  function escHtml(s) {
+    if (s == null) return "";
+    return String(s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  function fmtCallExtra(extra) {
+    if (!extra || typeof extra !== "object") return "";
+    const parts = [];
+    for (const [k, v] of Object.entries(extra)) {
+      if (v == null || v === "" || (Array.isArray(v) && v.length === 0)) continue;
+      let val;
+      if (Array.isArray(v)) val = v.join(", ");
+      else if (typeof v === "object") val = JSON.stringify(v);
+      else val = String(v);
+      if (val.length > 80) val = val.slice(0, 77) + "…";
+      parts.push(`<span><span style="color:var(--muted)">${escHtml(k)}=</span>${escHtml(val)}</span>`);
+    }
+    return parts.join(" · ");
+  }
+
+  async function fetchCalls() {
+    const f = callsState.filters;
+    const params = new URLSearchParams();
+    params.set("limit", String(callsState.limit));
+    if (f.endpoint) params.set("endpoint", f.endpoint);
+    if (f.chain) params.set("chain", f.chain);
+    if (f.provider) params.set("provider", f.provider);
+    if (f.outcome) params.set("outcome", f.outcome);
+    if (f.client) params.set("client", f.client);
+    callsState.loading = true;
+    try {
+      const data = await fetchJSON(`/v1/calls?${params.toString()}`);
+      callsState.items = data.calls || [];
+      callsState.summary = data.summary || null;
+      callsState.error = null;
+    } catch (e) {
+      if (e.status === 401) throw e;
+      callsState.error = e.message || String(e);
+    } finally {
+      callsState.loading = false;
+    }
+  }
+
+  function renderCalls() {
+    const items = callsState.items;
+    const summary = callsState.summary;
+
+    const endpoints = Array.from(new Set(items.map((c) => c.endpoint).filter(Boolean))).sort();
+    const chains = Array.from(new Set(items.flatMap((c) => [c.chain_requested, c.chain_resolved]).filter(Boolean))).sort();
+    const providers = Array.from(new Set(items.map((c) => c.provider).filter(Boolean))).sort();
+    // «anon» — sentinel: фильтр по NULL/пустому client (т.е. запросы без X-Client-Name).
+    const clientsFromItems = items.map((c) => c.client || "anon");
+    const clientsFromSummary = summary && summary.last_24h && summary.last_24h.clients
+      ? Object.keys(summary.last_24h.clients) : [];
+    const clients = Array.from(new Set([...clientsFromItems, ...clientsFromSummary])).sort();
+
+    const opt = (val, current) =>
+      `<option value="${escHtml(val)}"${val === current ? " selected" : ""}>${escHtml(val) || "— любой —"}</option>`;
+
+    const filterRow = `
+      <div class="calls-filters">
+        <select id="calls-f-endpoint">
+          ${opt("", callsState.filters.endpoint)}
+          ${endpoints.map((e) => opt(e, callsState.filters.endpoint)).join("")}
+        </select>
+        <select id="calls-f-chain">
+          ${opt("", callsState.filters.chain)}
+          ${chains.map((c) => opt(c, callsState.filters.chain)).join("")}
+        </select>
+        <select id="calls-f-provider">
+          ${opt("", callsState.filters.provider)}
+          ${providers.map((p) => opt(p, callsState.filters.provider)).join("")}
+        </select>
+        <select id="calls-f-outcome">
+          ${opt("", callsState.filters.outcome)}
+          ${["success", "error", "cancelled"].map((o) => opt(o, callsState.filters.outcome)).join("")}
+        </select>
+        <select id="calls-f-client" title="откуда пришёл вызов (заголовок X-Client-Name)">
+          ${opt("", callsState.filters.client)}
+          ${clients.map((c) => opt(c, callsState.filters.client)).join("")}
+        </select>
+        <select id="calls-f-limit">
+          ${[50, 100, 200, 500, 1000].map((n) =>
+            `<option value="${n}"${n === callsState.limit ? " selected" : ""}>${n} строк</option>`).join("")}
+        </select>
+        <button id="calls-refresh">обновить</button>
+        <span class="meta">${items.length} вызов(ов) загружено${callsState.error ? ` · <span style="color:var(--bad,#f85149)">${escHtml(callsState.error)}</span>` : ""}</span>
+      </div>
+    `;
+
+    const sumCard = (label, body, sub) =>
+      `<div class="summary-card"><div class="label">${escHtml(label)}</div><div class="value">${body}</div>${sub ? `<div class="sub">${sub}</div>` : ""}</div>`;
+
+    const renderSummary = (s, name) => {
+      if (!s) return "";
+      const o = s.outcomes || {};
+      const ok = o.success || 0;
+      const err = o.error || 0;
+      const can = o.cancelled || 0;
+      const avgMs = s.total > 0 ? Math.round(s.duration_ms_sum / s.total) : 0;
+      return [
+        sumCard(`${name} · вызовов`, String(s.total),
+          `${ok} ok · ${err} err${can ? ` · ${can} cancel` : ""}`),
+        sumCard(`${name} · токенов`, fmtTokens(s.total_tokens_sum), `prompt+completion`),
+        sumCard(`${name} · средняя`, fmtDurationMs(avgMs), `сумма ${fmtDurationMs(s.duration_ms_sum)}`),
+      ].join("");
+    };
+
+    const summaryHtml = summary
+      ? `<div class="calls-summary">${renderSummary(summary.last_1h, "1h")}${renderSummary(summary.last_24h, "24h")}</div>`
+      : "";
+
+    const rows = items.length === 0
+      ? `<tr><td colspan="10" class="empty" style="padding:32px">пока никаких вызовов</td></tr>`
+      : items.map((c) => {
+          const cls = c.outcome === "error"
+            ? "row-error"
+            : c.outcome === "cancelled"
+              ? "row-cancelled"
+              : "";
+          const durClass = c.duration_ms == null ? "" :
+            c.duration_ms > 15000 ? "slow" :
+            c.duration_ms > 5000 ? "warn" : "";
+          const tokenCell =
+            (c.prompt_tokens || c.completion_tokens)
+              ? `<b>${fmtTokens(c.prompt_tokens)}</b>→<b>${fmtTokens(c.completion_tokens)}</b>${c.cached_tokens ? ` <span title="cached">⟳${fmtTokens(c.cached_tokens)}</span>` : ""}`
+              : "—";
+          const chainCell = c.chain_requested === c.chain_resolved || !c.chain_resolved
+            ? escHtml(c.chain_requested || "—")
+            : `${escHtml(c.chain_requested || "?")} → ${escHtml(c.chain_resolved)}`;
+          const errorBlock = c.error_msg
+            ? `<div class="col-error">${escHtml(c.error_type || "")}: ${escHtml(c.error_msg)}</div>`
+            : "";
+          const extraHtml = fmtCallExtra(c.extra);
+          const extraBlock = (errorBlock || extraHtml)
+            ? `<td class="col-extra">${errorBlock}${extraHtml}</td>`
+            : `<td class="col-extra"></td>`;
+          const streamBadge = c.stream ? ' <span title="streaming" style="color:var(--muted)">⇢</span>' : "";
+          const clientCell = c.client
+            ? `<span class="pill" style="background:rgba(56,139,253,0.15);color:#79c0ff">${escHtml(c.client)}</span>`
+            : `<span style="color:var(--muted)" title="без X-Client-Name">anon</span>`;
+          return `
+            <tr class="${cls}" title="${escHtml(new Date(c.ts * 1000).toLocaleString([], { hour12: false }))}">
+              <td class="col-when">${escHtml(fmtClockTs(c.ts))}<div style="color:var(--muted);font-size:10px">${escHtml(fmtRelativeTs(c.ts))}</div></td>
+              <td>${clientCell}</td>
+              <td class="col-endpoint"><span class="pill">${escHtml(c.endpoint)}</span>${streamBadge}</td>
+              <td class="col-outcome"><span class="pill ${escHtml(c.outcome)}">${escHtml(c.outcome)}</span></td>
+              <td>${escHtml(c.client_model || "—")}</td>
+              <td>${chainCell}</td>
+              <td>${escHtml(c.provider || "—")}</td>
+              <td class="col-dur ${durClass}">${escHtml(fmtDurationMs(c.duration_ms))}</td>
+              <td class="col-tokens">${tokenCell}</td>
+              ${extraBlock}
+            </tr>`;
+        }).join("");
+
+    setContentHtml(`
+      ${summaryHtml}
+      ${filterRow}
+      <div class="calls-table-wrap">
+        <table class="calls">
+          <thead>
+            <tr>
+              <th>когда</th>
+              <th>откуда</th>
+              <th>endpoint</th>
+              <th>исход</th>
+              <th>client model</th>
+              <th>цепочка</th>
+              <th>провайдер</th>
+              <th>длит.</th>
+              <th>токены (in→out)</th>
+              <th>детали</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `);
+
+    const bind = (id, key) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener("change", async (e) => {
+        if (key === "limit") {
+          callsState.limit = Number(e.target.value) || 200;
+        } else {
+          callsState.filters[key] = e.target.value;
+        }
+        await fetchCalls();
+        renderCalls();
+      });
+    };
+    bind("calls-f-endpoint", "endpoint");
+    bind("calls-f-chain", "chain");
+    bind("calls-f-provider", "provider");
+    bind("calls-f-outcome", "outcome");
+    bind("calls-f-client", "client");
+    bind("calls-f-limit", "limit");
+    const refreshBtn = document.getElementById("calls-refresh");
+    if (refreshBtn) refreshBtn.addEventListener("click", async () => {
+      await fetchCalls();
+      renderCalls();
+    });
+  }
+  // ───── /Calls view ─────
+
+  function renderView() {
+    const slot = document.getElementById("total-rpd-slot");
+    if (slot && activeView !== "providers") slot.innerHTML = "";
+    const editSlot = document.getElementById("chains-edit-slot");
+    if (editSlot && activeView !== "providers") editSlot.innerHTML = "";
+    if (activeView === "providers") {
+      if (latestStats && latestMetrics) renderProviders(latestStats, latestMetrics);
+      else contentEl.innerHTML = `<div class="empty">загрузка…</div>`;
+    } else if (activeView === "calls") {
+      renderCalls();
+    } else if (activeView === "audit") {
+      renderAudit();
+    } else if (activeView === "chat") {
+      renderChat();
+    } else if (activeView === "debate") {
+      renderDebate();
+    }
+  }
+
+  async function switchView(view) {
+    if (view === activeView) return;
+    activeView = view;
+    document.querySelectorAll(".nav-tab").forEach((b) => {
+      b.classList.toggle("active", b.dataset.view === view);
+    });
+    if (view === "audit") {
+      try {
+        await fetchAuditList();
+        if (!activeAuditDate && auditList.length) {
+          activeAuditDate = auditList[0].date;
+          await fetchAuditBody(activeAuditDate);
+        }
+      } catch (e) {
+        if (e.status === 401) { promptToken(); return; }
+      }
+    } else if (view === "calls") {
+      try {
+        await fetchCalls();
+      } catch (e) {
+        if (e.status === 401) { promptToken(); return; }
+      }
+    }
+    renderView();
+  }
+
+  document.querySelectorAll(".nav-tab").forEach((btn) => {
+    btn.addEventListener("click", () => switchView(btn.dataset.view));
+  });
+
+  async function refresh() {
+    if (inFlight) return;
+    inFlight = true;
+    statusEl.textContent = "обновляю…";
+    try {
+      const [stats, metrics] = await Promise.all([
+        fetchJSON("/v1/stats"),
+        fetchJSON("/v1/metrics.json"),
+      ]);
+      latestStats = stats;
+      latestMetrics = metrics;
+      defaultChainEl.textContent = stats.default_chain || "?";
+      if (activeView === "providers") renderProviders(stats, metrics);
+      if (activeView === "calls") {
+        try {
+          await fetchCalls();
+          renderCalls();
+        } catch (e) { /* ignore — handled below for 401 */ if (e.status === 401) throw e; }
+      }
+      // don't repaint chat/audit on polling — user may be typing or reading
+      showError("");
+      statusEl.textContent = `обновлено в ${fmtTime()}`;
+    } catch (e) {
+      if (e.status === 401) {
+        statusEl.textContent = "нужен токен";
+        promptToken();
+      } else {
+        showError(e.message || String(e));
+        statusEl.textContent = "ошибка";
+      }
+    } finally {
+      inFlight = false;
+    }
+  }
+
+  function start() {
+    refresh();
+    if (timer) clearInterval(timer);
+    timer = setInterval(refresh, REFRESH_MS);
+  }
+
+  start();
+})();
+</script>
+</body>
+</html>

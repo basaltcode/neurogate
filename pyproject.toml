@@ -1,0 +1,38 @@
+[project]
+name = "neurogate"
+version = "0.1.0"
+description = "OpenAI-compatible LLM proxy with fallback across free-tier providers (llmgate)"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+readme = "README.md"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "httpx>=0.27",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.5",
+    "pyyaml>=6.0",
+    "google-genai>=1.0",
+    "prometheus-client>=0.20",
+    "python-multipart>=0.0.9",
+    "edge-tts>=7.0",
+    "gradio-client>=1.0",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+neurogate = "neurogate.main:run"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/neurogate"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

@@ -1,0 +1,11 @@
+[
+  {
+    "name": "nvidia:mistralai/mistral-medium-3.5-128b",
+    "kind": "nvidia",
+    "model": "mistralai/mistral-medium-3.5-128b",
+    "status": "confirmed_unverified",
+    "http_code": 200,
+    "detail": "smoke ok; identity call failed: nvidia:mistralai/mistral-medium-3.5-128b HTTP 502: ",
+    "identity_reply": ""
+  }
+]
