@@ -1,10 +1,10 @@
-# llmgate — full reference config (example).
+# neurogate — full reference config (example).
 #
 # Quick start:
 #   1. cp config.yaml.example config.yaml
 #   2. Удали из config.yaml те провайдеры/chains, которые тебе не нужны.
 #   3. Заполни ключи в .env (гайд по получению — docs/providers-setup.md).
-#   4. Запусти: uv sync && uv run llmgate
+#   4. Запусти: uv sync && uv run neurogate
 #
 # Без ключа провайдер автоматически пропускается на старте — можно начать с
 # одного бесплатного ключа (например, Groq) и расширять по необходимости. Если
@@ -1115,7 +1115,7 @@ providers:
     kind: pollinations_image
     model: sana
     api_key_env: POLLINATIONS_API_KEY
-    referer: llmgate
+    referer: neurogate
     rpm: 8           # seed tier = 12 rpm кэп, оставляем запас на burst
     min_interval_s: 5.0   # seed tier = 1 req / 5s (сериализация n>1 + backoff на 429)
     timeout: 90      # sana 512×512 ~1s, но при 429+retry нужен запас
@@ -1125,7 +1125,7 @@ providers:
     kind: pollinations_image
     model: flux
     api_key_env: POLLINATIONS_API_KEY
-    referer: llmgate
+    referer: neurogate
     rpm: 8
     min_interval_s: 5.0
     timeout: 150     # измеренная generation latency на seed tier ~90s (очередь)
@@ -1136,7 +1136,7 @@ providers:
     kind: pollinations_image
     model: turbo
     api_key_env: POLLINATIONS_API_KEY
-    referer: llmgate
+    referer: neurogate
     rpm: 8
     min_interval_s: 5.0
     timeout: 150     # тот же queue pattern, что и flux на seed tier

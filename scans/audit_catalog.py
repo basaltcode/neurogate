@@ -50,7 +50,7 @@ class Vendor:
 VENDORS: list[Vendor] = [
     Vendor("groq",       "https://api.groq.com/openai/v1",       "GROQ_API_KEY"),
     Vendor("openrouter", "https://openrouter.ai/api/v1",         "OPENROUTER_API_KEY",
-           extra_headers={"HTTP-Referer": "https://github.com/llmgate", "X-Title": "llmgate"}),
+           extra_headers={"HTTP-Referer": "https://github.com/neurogate", "X-Title": "neurogate"}),
     Vendor("cerebras",   "https://api.cerebras.ai/v1",           "CEREBRAS_API_KEY"),
     Vendor("sambanova",  "https://api.sambanova.ai/v1",          "SAMBANOVA_API_KEY"),
     Vendor("nvidia",     "https://integrate.api.nvidia.com/v1",  "NVIDIA_API_KEY"),

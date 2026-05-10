@@ -21,7 +21,7 @@ jobs:
           uv run python -c "import yaml; yaml.safe_load(open('config.yaml.example'))"
       - name: Smoke-load real config.yaml via load_config
         run: |
-          uv run python -c "import sys; sys.path.insert(0, 'src'); from llmgate.config import load_config; load_config('config.yaml.example')"
+          uv run python -c "import sys; sys.path.insert(0, 'src'); from neurogate.config import load_config; load_config('config.yaml.example')"
       - name: Smoke-load paid_models_blocklist.yaml
         run: |
           uv run python -c "import yaml; assert isinstance(yaml.safe_load(open('scans/paid_models_blocklist.yaml')), dict)"

@@ -187,7 +187,7 @@ async def _fetch_hn_news(timeout: float = 10.0, hours: int = 48) -> list[dict[st
 async def _fetch_reddit_news(timeout: float = 10.0) -> list[dict[str, Any]]:
     """Pull r/LocalLLaMA new posts. r/artificial blocks programmatic UAs → skipped."""
     subs = ["LocalLLaMA"]
-    headers = {"User-Agent": "llmgate-audit/0.1 (github.com/llmgate)"}
+    headers = {"User-Agent": "neurogate-audit/0.1 (github.com/neurogate)"}
     cutoff = time.time() - 48 * 3600
     out: list[dict[str, Any]] = []
     async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
@@ -283,7 +283,7 @@ def _summarize_news(hn: list[dict[str, Any]], reddit: list[dict[str, Any]]) -> s
 
 def _build_prompt(known_md: str, live_md: str, news_md: str) -> str:
     return f"""Ты аудитор бесплатных AI API. Твоя задача — раз в сутки находить новые бесплатные \
-модели и провайдеров, которые ещё не подключены к моему прокси llmgate.
+модели и провайдеров, которые ещё не подключены к моему прокси neurogate.
 
 ## Мои текущие провайдеры (уже подключены)
 
@@ -360,9 +360,9 @@ async def _notify_telegram(date: str, provider: str, markdown: str) -> None:
         return
     # Telegram message limit is 4096 chars — keep headroom for headers.
     preview = _strip_trailer(markdown).strip()[:3500]
-    dashboard = os.getenv("LLMGATE_PUBLIC_URL", "").rstrip("/")
+    dashboard = os.getenv("NEUROGATE_PUBLIC_URL", "").rstrip("/")
     link = f"\n\n🔗 {dashboard}/dashboard" if dashboard else ""
-    text = f"🤖 *llmgate audit {date}* via `{provider}`\n\n{preview}{link}"
+    text = f"🤖 *neurogate audit {date}* via `{provider}`\n\n{preview}{link}"
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:

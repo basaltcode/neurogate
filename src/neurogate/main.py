@@ -16,16 +16,16 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from llmgate.anthropic_compat import (
+from neurogate.anthropic_compat import (
     MessagesRequest,
     request_to_openai,
     result_to_anthropic,
     translate_stream,
 )
-from llmgate.audit import audit_loop, run_audit
-from llmgate.health import health_loop, run_health_report
-from llmgate.auto_route import classify_intent
-from llmgate.config import (
+from neurogate.audit import audit_loop, run_audit
+from neurogate.health import health_loop, run_health_report
+from neurogate.auto_route import classify_intent
+from neurogate.config import (
     AdhocResolveError,
     ChainConfig,
     SkippedProvider,
@@ -33,10 +33,10 @@ from llmgate.config import (
     load_config,
     rewrite_chains_in_yaml,
 )
-from llmgate.metrics import registry
-from llmgate.router import LLMRouter
-from llmgate.stats import RateTracker
-from llmgate.schemas import (
+from neurogate.metrics import registry
+from neurogate.router import LLMRouter
+from neurogate.stats import RateTracker
+from neurogate.schemas import (
     ChatCompletionChoice,
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -54,7 +54,7 @@ _STATIC_DIR = Path(__file__).parent / "static"
 # `X-Client-Name`, читается _log_call. Информационная метка (вариант B плана #15):
 # клиент сам себя называет, нельзя отозвать «по одному боту» — но даёт разрез
 # «кто жрёт квоту» без миграции токенов.
-_current_client: ContextVar[str | None] = ContextVar("llmgate_client", default=None)
+_current_client: ContextVar[str | None] = ContextVar("neurogate_client", default=None)
 
 _CLIENT_NAME_RE = re.compile(r"[^a-z0-9_./\-]")
 
@@ -158,7 +158,7 @@ def _print_startup_banner(cfg: ChainConfig, host: str, port: int) -> None:
     chain_names = list(cfg.chains.keys())
     bar = "═" * 60
     print(bar)
-    print(" llmgate v0.1.0")
+    print(" neurogate v0.1.0")
     print(f" active providers: {active}")
     if skipped_count:
         print(f" skipped (missing key/field): {skipped_count}")
@@ -166,7 +166,7 @@ def _print_startup_banner(cfg: ChainConfig, host: str, port: int) -> None:
     print(f" dashboard: http://{host}:{port}/dashboard")
     print(bar)
     if skipped_count:
-        from llmgate.config import _missing_env_vars  # local import to avoid cycle
+        from neurogate.config import _missing_env_vars  # local import to avoid cycle
 
         grouped = _missing_env_vars(cfg.skipped)
         if grouped:
@@ -184,10 +184,10 @@ def _print_startup_banner(cfg: ChainConfig, host: str, port: int) -> None:
 
 def create_app() -> FastAPI:
     _configure_logging()
-    config_path = Path(os.getenv("LLMGATE_CONFIG", "config.yaml"))
+    config_path = Path(os.getenv("NEUROGATE_CONFIG", "config.yaml"))
     cfg = load_config(config_path)
 
-    stats_path = Path(os.getenv("LLMGATE_STATS_DB", "stats.db"))
+    stats_path = Path(os.getenv("NEUROGATE_STATS_DB", "stats.db"))
     rate_tracker = RateTracker(stats_path)
 
     providers_by_name = {p.name: p for p in cfg.all_providers}
@@ -202,12 +202,12 @@ def create_app() -> FastAPI:
 
     _print_startup_banner(
         cfg,
-        host=os.getenv("LLMGATE_HOST", "127.0.0.1"),
-        port=int(os.getenv("LLMGATE_PORT", "8765")),
+        host=os.getenv("NEUROGATE_HOST", "127.0.0.1"),
+        port=int(os.getenv("NEUROGATE_PORT", "8765")),
     )
 
     api_token = os.getenv("NEUROGATE_API_TOKEN", "").strip()
-    virtual_model = os.getenv("LLMGATE_VIRTUAL_MODEL", "auto")
+    virtual_model = os.getenv("NEUROGATE_VIRTUAL_MODEL", "auto")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -226,7 +226,7 @@ def create_app() -> FastAPI:
                 except asyncio.CancelledError:
                     pass
 
-    app = FastAPI(title="llmgate", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="neurogate", version="0.1.0", lifespan=lifespan)
     app.state.router = router
     app.state.rate_tracker = rate_tracker
     app.state.api_token = api_token
@@ -347,14 +347,14 @@ def create_app() -> FastAPI:
         latency_count: dict[str, float] = {}
         latency_sum: dict[str, float] = {}
         for family in registry.collect():
-            if family.name == "llmgate_requests":
+            if family.name == "neurogate_requests":
                 for sample in family.samples:
-                    if sample.name != "llmgate_requests_total":
+                    if sample.name != "neurogate_requests_total":
                         continue
                     provider = sample.labels.get("provider", "?")
                     outcome = sample.labels.get("outcome", "?")
                     counters.setdefault(provider, {})[outcome] = sample.value
-            elif family.name == "llmgate_request_duration_seconds":
+            elif family.name == "neurogate_request_duration_seconds":
                 for sample in family.samples:
                     provider = sample.labels.get("provider", "?")
                     if sample.name.endswith("_count"):
@@ -1178,7 +1178,7 @@ def create_app() -> FastAPI:
                         used_chain = _c
                         if first:
                             meta = json.dumps({"provider": _p, "chain": _c})
-                            yield f"event: llmgate\ndata: {meta}\n\n".encode()
+                            yield f"event: neurogate\ndata: {meta}\n\n".encode()
                             first = False
                         yield chunk
                     _log_call(
@@ -1486,11 +1486,11 @@ def create_app() -> FastAPI:
         )
 
         headers = {
-            "X-Llmgate-Provider": used_name,
-            "X-Llmgate-Chain": used_chain,
+            "X-Neurogate-Provider": used_name,
+            "X-Neurogate-Chain": used_chain,
         }
         if result.voice:
-            headers["X-Llmgate-Voice"] = result.voice
+            headers["X-Neurogate-Voice"] = result.voice
         return Response(
             content=result.audio,
             media_type=result.content_type,
@@ -1580,11 +1580,11 @@ def create_app() -> FastAPI:
         )
 
         headers = {
-            "X-Llmgate-Provider": used_name,
-            "X-Llmgate-Chain": used_chain,
+            "X-Neurogate-Provider": used_name,
+            "X-Neurogate-Chain": used_chain,
         }
         if result.duration_s is not None:
-            headers["X-Llmgate-Duration"] = f"{result.duration_s:.2f}"
+            headers["X-Neurogate-Duration"] = f"{result.duration_s:.2f}"
         return Response(
             content=result.audio,
             media_type=result.content_type,
@@ -2513,9 +2513,9 @@ def create_app() -> FastAPI:
 def run() -> None:
     import uvicorn
 
-    host = os.getenv("LLMGATE_HOST", "127.0.0.1")
-    port = int(os.getenv("LLMGATE_PORT", "8765"))
-    uvicorn.run("llmgate.main:create_app", host=host, port=port, factory=True, log_level="info")
+    host = os.getenv("NEUROGATE_HOST", "127.0.0.1")
+    port = int(os.getenv("NEUROGATE_PORT", "8765"))
+    uvicorn.run("neurogate.main:create_app", host=host, port=port, factory=True, log_level="info")
 
 
 app = None  # lazy; create_app() is the factory uvicorn imports

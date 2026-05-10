@@ -37,7 +37,7 @@ def _sig_db() -> sqlite3.Connection | None:
     if _GEMINI_SIG_CONN is not None or _GEMINI_SIG_CONN_TRIED:
         return _GEMINI_SIG_CONN
     _GEMINI_SIG_CONN_TRIED = True
-    db_path = os.getenv("LLMGATE_STATS_DB", "stats.db")
+    db_path = os.getenv("NEUROGATE_STATS_DB", "stats.db")
     try:
         conn = sqlite3.connect(db_path, isolation_level=None, check_same_thread=False)
         conn.execute("PRAGMA journal_mode=WAL")
@@ -1551,7 +1551,7 @@ class PollinationsImageProvider:
         api_key: str,
         model: str,
         base_url: str = "https://image.pollinations.ai",
-        referer: str = "llmgate",
+        referer: str = "neurogate",
         timeout: float = 60.0,
         min_interval_s: float = 5.0,
         rpd: int | None = None,
@@ -1919,7 +1919,7 @@ class AIHordeImageProvider:
         api_key: str = "0000000000",
         model: str = "stable_diffusion",
         base_url: str = "https://aihorde.net/api/v2",
-        client_agent: str = "llmgate:0.1:https://github.com/llmgate",
+        client_agent: str = "neurogate:0.1:https://github.com/neurogate",
         steps: int = 20,
         sampler_name: str = "k_euler",
         cfg_scale: float = 7.0,

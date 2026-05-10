@@ -25,10 +25,10 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from llmgate.providers import ProviderCallResult
+from neurogate.providers import ProviderCallResult
 
 if TYPE_CHECKING:
-    from llmgate.router import LLMRouter
+    from neurogate.router import LLMRouter
 
 log = logging.getLogger(__name__)
 

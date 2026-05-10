@@ -5,7 +5,7 @@ title: "[bug] "
 labels: bug
 ---
 
-llmgate в раннем доступе — баги ожидаемы. Чтобы починить быстро, заполни поля ниже. Подробности почему мы это спрашиваем — `docs/bug-report.md`.
+neurogate в раннем доступе — баги ожидаемы. Чтобы починить быстро, заполни поля ниже. Подробности почему мы это спрашиваем — `docs/bug-report.md`.
 
 ## Что произошло
 
@@ -33,7 +33,7 @@ llmgate в раннем доступе — баги ожидаемы. Чтобы
 
 <!-- поле `model:` в запросе, например auto, chat, deepseek:reasoner -->
 
-## llmgate version
+## neurogate version
 
 <!-- git rev-parse --short HEAD или дата клонирования -->
 
@@ -43,6 +43,6 @@ llmgate в раннем доступе — баги ожидаемы. Чтобы
 
 ## Request ID (опционально)
 
-<!-- x-request-id из headers ответа llmgate -->
+<!-- x-request-id из headers ответа neurogate -->
 
 ## Скриншоты / DevTools network tab (опционально)

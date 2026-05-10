@@ -7,10 +7,10 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
-from llmgate.config import AdhocResolveError, build_adhoc_provider
-from llmgate.errors import ErrorCategory, classify
-from llmgate.metrics import request_duration_seconds, requests_total
-from llmgate.providers import (
+from neurogate.config import AdhocResolveError, build_adhoc_provider
+from neurogate.errors import ErrorCategory, classify
+from neurogate.metrics import request_duration_seconds, requests_total
+from neurogate.providers import (
     AudioGenerationResult,
     AudioSpeechResult,
     AudioTranscribeResult,
@@ -22,7 +22,7 @@ from llmgate.providers import (
     RerankResult,
     TranslationResult,
 )
-from llmgate.stats import RateTracker
+from neurogate.stats import RateTracker
 
 log = logging.getLogger(__name__)
 
@@ -1434,7 +1434,7 @@ class LLMRouter:
         Reads the user question from last user message. All pipeline logic lives in
         deep_search.run_deep_search to keep router thin.
         """
-        from llmgate.deep_search import run_deep_search
+        from neurogate.deep_search import run_deep_search
 
         user_query = _extract_user_query(messages)
         if not user_query:

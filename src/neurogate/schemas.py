@@ -77,7 +77,7 @@ class ModelInfo(BaseModel):
     id: str
     object: Literal["model"] = "model"
     created: int = 0
-    owned_by: str = "llmgate"
+    owned_by: str = "neurogate"
 
 
 class ModelList(BaseModel):

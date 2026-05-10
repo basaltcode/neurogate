@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from llmgate.providers import (
+from neurogate.providers import (
     AIHordeImageProvider,
     CloudflareEmbedProvider,
     CloudflareImageProvider,
@@ -65,7 +65,7 @@ PROVIDER_KIND_DEFAULTS = {
     "nvidia": {"base_url": "https://integrate.api.nvidia.com/v1"},
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
-        "extra_headers": {"HTTP-Referer": "https://github.com/llmgate", "X-Title": "llmgate"},
+        "extra_headers": {"HTTP-Referer": "https://github.com/neurogate", "X-Title": "neurogate"},
     },
     "zai": {
         "base_url": "https://api.z.ai/api/paas/v4",
@@ -113,7 +113,7 @@ PROVIDER_KIND_DEFAULTS = {
     # Referer обязателен для tier recognition (иначе всегда anonymous, вне зависимости от Bearer).
     "pollinations": {
         "base_url": "https://text.pollinations.ai/v1",
-        "extra_headers": {"Referer": "llmgate"},
+        "extra_headers": {"Referer": "neurogate"},
     },
     # LibreTranslate-compat public instance. libretranslate.com/.de стали платными
     # в начале 2026; fedilab — живой community-mirror (2026-04-23 probe).
@@ -656,8 +656,8 @@ def _build_provider(
         # OpenRouter требует Referer/X-Title (как у обычного openrouter kind).
         lg_extra_headers = dict(extra_headers)
         if host == "openrouter":
-            lg_extra_headers.setdefault("HTTP-Referer", "https://github.com/llmgate")
-            lg_extra_headers.setdefault("X-Title", "llmgate")
+            lg_extra_headers.setdefault("HTTP-Referer", "https://github.com/neurogate")
+            lg_extra_headers.setdefault("X-Title", "neurogate")
         return LlamaGuardProvider(
             name=name,
             kind=f"llama_guard:{host or 'custom'}",
@@ -681,7 +681,7 @@ def _build_provider(
             api_key=api_key,
             model=model,
             base_url=base_url or "https://image.pollinations.ai",
-            referer=str(entry.get("referer") or "llmgate"),
+            referer=str(entry.get("referer") or "neurogate"),
             timeout=float(entry.get("timeout", 60.0)),
             min_interval_s=float(entry.get("min_interval_s", 5.0)),
             rpd=rpd,
@@ -790,7 +790,7 @@ def _build_provider(
             model=model or "stable_diffusion",
             base_url=base_url or "https://aihorde.net/api/v2",
             client_agent=str(entry.get("client_agent")
-                             or "llmgate:0.1:https://github.com/llmgate"),
+                             or "neurogate:0.1:https://github.com/neurogate"),
             steps=steps,
             sampler_name=str(entry.get("sampler_name") or "k_euler"),
             cfg_scale=float(entry.get("cfg_scale", 7.0)),

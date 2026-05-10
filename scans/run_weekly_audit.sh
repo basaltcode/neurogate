@@ -4,7 +4,7 @@
 # НЕ деплоит, НЕ мержит, НЕ редактирует chains: — только candidates.json + verified.json.
 #
 # crontab пример (понедельник 10:00 MSK = 07:00 UTC) — путь подставь свой:
-#   0 7 * * 1 cd <path-to-llmgate-checkout> && bash scans/run_weekly_audit.sh >> scans/cron.log 2>&1
+#   0 7 * * 1 cd <path-to-neurogate-checkout> && bash scans/run_weekly_audit.sh >> scans/cron.log 2>&1
 
 set -euo pipefail
 
