@@ -260,7 +260,7 @@
 - **Signup**: $25 кредитов на 30 дней
 - **Data-sharing program**: opt-in на sharing → $150/мес recurring (обновляется пока включено, требует минимум $5 spend за период)
 - **Зачем**: Grok 4.1 Fast — уникальный **2M context window**, никто больше такого не даёт
-- **В конфиг**: нужен `kind: xai` провайдер (OpenAI-compat endpoint `https://api.x.ai/v1`). **Пока не реализован** в neurogate.
+- **В конфиг**: нужен `kind: xai` провайдер (OpenAI-compat endpoint `https://api.x.ai/v1`). **Пока не реализован** в llmgate.
 
 ### Alibaba Qwen Singapore — 1M токенов × десятки моделей на 90 дней
 
@@ -284,7 +284,7 @@
 - **Регистрация**: https://console.anthropic.com (phone verify)
 - **Signup**: $5 кредитов на 30 дней после phone verify
 - **Зачем**: единственный способ добавить frontier Claude Sonnet/Opus в цепочку без Bedrock/Databricks
-- **Нюанс**: Anthropic API не OpenAI-compat — нужен отдельный `kind: anthropic`. В neurogate **пока не реализован**.
+- **Нюанс**: Anthropic API не OpenAI-compat — нужен отдельный `kind: anthropic`. В llmgate **пока не реализован**.
 
 ### OpenAI direct — единоразово $5 ради бесплатной модерации (text + image)
 
@@ -327,7 +327,7 @@
 | `omni-moderation-latest` | Text + image moderation, 13 категорий, native scores | $0 / $0 |
 | `text-moderation-latest` | Legacy text-only, 7 категорий | $0 / $0 |
 
-В neurogate реализованы как `kind: openai_moderation` в [config.py:118](../src/neurogate/config.py#L118), провайдер [`OpenAIModerationProvider`](../src/neurogate/providers.py#L3205). Обе уже в дефолтных цепочках `moderation` и `moderation_image`.
+В llmgate реализованы как `kind: openai_moderation` в [config.py:118](../src/llmgate/config.py#L118), провайдер [`OpenAIModerationProvider`](../src/llmgate/providers.py#L3205). Обе уже в дефолтных цепочках `moderation` и `moderation_image`.
 
 **Платные модели — опциональный subset для `paid` chain (используя `OPENAI_API_KEY_PAID`):**
 
@@ -345,11 +345,11 @@
 ## После получения ключей
 
 1. Скопировать: `cp .env.example .env`
-2. Вписать ключи в `.env` (пустые строки neurogate просто пропустит — провайдеры без ключа исключаются из цепочки)
-3. Запустить: `uv run neurogate`
+2. Вписать ключи в `.env` (пустые строки llmgate просто пропустит — провайдеры без ключа исключаются из цепочки)
+3. Запустить: `uv run llmgate`
 4. Проверить, какие провайдеры реально доступны: `curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8765/v1/models`
 
-Если провайдер упирается в 429 — neurogate автоматически перейдёт к следующему. Если все упали — вернётся HTTP 502 `upstream_exhausted` (на free-тирах в сумме с 1 ключа это ~20-25k сообщений/сутки, так что до потолка надо постараться).
+Если провайдер упирается в 429 — llmgate автоматически перейдёт к следующему. Если все упали — вернётся HTTP 502 `upstream_exhausted` (на free-тирах в сумме с 1 ключа это ~20-25k сообщений/сутки, так что до потолка надо постараться).
 
 ## Если что-то не работает — как сообщить о баге
 

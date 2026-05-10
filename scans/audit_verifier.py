@@ -35,7 +35,7 @@ try:
 except ImportError:
     pass  # CI/Actions: env vars set directly, .env file not present
 
-from neurogate.config import _build_provider  # noqa: E402
+from llmgate.config import _build_provider  # noqa: E402
 
 CONFIG_PATH = ROOT / "config.yaml"
 

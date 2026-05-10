@@ -80,15 +80,15 @@ jobs:
           today = date.today().isoformat()
 
           if status != "success":
-              msg = f"❌ neurogate audit FAILED ({today})\n{run_url}"
+              msg = f"❌ llmgate audit FAILED ({today})\n{run_url}"
           else:
               files = sorted(glob.glob("scans/audit-*-verified.json"))
               data = json.loads(open(files[-1]).read()) if files else []
               if not data:
-                  msg = f"✅ neurogate audit {today}: no new candidates"
+                  msg = f"✅ llmgate audit {today}: no new candidates"
               else:
                   c = Counter(v["status"] for v in data)
-                  lines = [f"🔍 neurogate audit {today}",
+                  lines = [f"🔍 llmgate audit {today}",
                            f"new candidates: {len(data)}"]
                   for st in ("confirmed", "confirmed_unverified",
                              "rejected_dedup", "rejected_http",

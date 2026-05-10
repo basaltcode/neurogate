@@ -121,7 +121,7 @@ jobs:
           sha = (os.environ.get("COMMIT_SHA") or "")[:7]
           msg_first = ((os.environ.get("COMMIT_MSG") or "").splitlines() or [""])[0][:80]
           icon = "🚀" if status == "success" else "💥"
-          text = f"{icon} neurogate deploy: {status}\n{sha} {msg_first}\n{run_url}"
+          text = f"{icon} llmgate deploy: {status}\n{sha} {msg_first}\n{run_url}"
           body = urllib.parse.urlencode({
               "chat_id": chat, "text": text, "disable_web_page_preview": "true"
           }).encode()

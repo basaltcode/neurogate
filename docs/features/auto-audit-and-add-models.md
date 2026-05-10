@@ -75,7 +75,7 @@ Output: `scans/audit-YYYY-MM-DD-verified.json` — `[{name, kind, model, status,
 |---|---|---|
 | 1 | Hallucinated model name | Stage 2 deterministic gate'ы: dedup → smoke (HTTP) → identity-probe. Эмпирика 2026-04-29: 13/13 галлюцинаций пойманы без LLM. |
 | 2 | Дубликат уже в `config.yaml` | `_dedup_check()` по `name` И `model`-полю — выполняется **первым** в Stage 2, чтобы не жечь smoke/identity-квоту на уже добавленные модели. |
-| 3 | Сломанный YAML после правки | После Stage 3: `python -c "import yaml; yaml.safe_load(open('config.yaml'))"` + `from neurogate.config import load_config; load_config('config.yaml')`. Если падает — PR не открывается, ветка остаётся. |
+| 3 | Сломанный YAML после правки | После Stage 3: `python -c "import yaml; yaml.safe_load(open('config.yaml'))"` + `from llmgate.config import load_config; load_config('config.yaml')`. Если падает — PR не открывается, ветка остаётся. |
 | 4 | Платная модель в free-тестах | `paid_models_blocklist.yaml` — явный deny-list (`gpt-5*`, `o3*`, `o4-mini*`, `claude-opus-*`, `gemini-3.1-pro*`, `deep-research-*`). Stage 2 отбрасывает совпадения. |
 | 5 | Модель попадает в чейн «не на своё место» | Stage 3 НЕ редактирует секцию `chains:` вообще. Chain placement — только review. |
 | 6 | Жжём квоту на бенч | Stage 3 — только `bench_latency` (5 запросов × 2 варианта = 10) + `ru_bench` (20 запросов). Итого ≤30 запросов на модель. RPD-кэп ставим консервативный. |

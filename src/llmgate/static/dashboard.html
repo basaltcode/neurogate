@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>neurogate · дашборд</title>
+<title>llmgate · дашборд</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230e1116'/%3E%3Cpath d='M16 44V20h6v18h14v6zm24 0V20h6v24zM32 14a4 4 0 110 8 4 4 0 010-8z' fill='%2358a6ff'/%3E%3C/svg%3E" />
 <style>
   :root {
@@ -942,7 +942,7 @@
 <body>
 <header>
   <div class="header-inner">
-    <h1>neurogate</h1>
+    <h1>llmgate</h1>
     <span class="default" title="цепочка, которая используется по умолчанию — когда клиент прислал model:auto или неизвестное значение">default-цепочка: <b id="default-chain">—</b></span>
     <span class="spacer"></span>
     <span class="status" id="status">загрузка…</span>
@@ -972,7 +972,7 @@
 
 <dialog id="token-dialog">
   <h3>Нужен API-токен</h3>
-  <p>У этого neurogate задан <code>NEUROGATE_API_TOKEN</code>. Вставь его, чтобы видеть данные. Сохраняется только в браузере.</p>
+  <p>У этого llmgate задан <code>NEUROGATE_API_TOKEN</code>. Вставь его, чтобы видеть данные. Сохраняется только в браузере.</p>
   <input type="password" id="token-input" placeholder="Bearer-токен" autocomplete="off" />
   <div class="row">
     <button id="token-cancel">отмена</button>
@@ -1005,7 +1005,7 @@
 
 <script>
 (() => {
-  const TOKEN_KEY = "neurogate_token";
+  const TOKEN_KEY = "llmgate_token";
   const REFRESH_MS = 5000;
 
   const $ = (id) => document.getElementById(id);
@@ -1222,7 +1222,7 @@
         : 'пока не вызывался';
       const title = used24h > 0
         ? "счётчики исходов хранятся только в памяти процесса и обнуляются при рестарте. last_24h живёт в SQLite."
-        : "провайдер ещё не вызывался с момента старта neurogate";
+        : "провайдер ещё не вызывался с момента старта llmgate";
       return `<div class="outcomes" title="${title}"><span class="none">${hint}</span></div>`;
     }
     const keys = Object.keys(counters).sort((a, b) => {
@@ -1356,7 +1356,7 @@
         ${renderLimit("RPM", used1m, rpm, reset.rpm_reset_at)}
         ${renderOutcomes(counters, used24h)}
         <div class="foot">
-          <span title="количество запросов, ушедших в провайдера с момента запуска процесса neurogate">с рестарта: ${callCount}</span>
+          <span title="количество запросов, ушедших в провайдера с момента запуска процесса llmgate">с рестарта: ${callCount}</span>
           <span title="среднее: бенч (хардкод из config.yaml → latency_s, замер с сервера) / live (успешные запросы с рестарта)">среднее: ${benchAvg} / ${liveAvg}</span>
         </div>
       </div>
@@ -2516,7 +2516,7 @@
           }
           if (!dataStr) continue;
 
-          if (eventType === "neurogate") {
+          if (eventType === "llmgate") {
             try {
               const meta = JSON.parse(dataStr);
               assistantMsg.provider = meta.provider;

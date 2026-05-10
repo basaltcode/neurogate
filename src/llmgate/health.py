@@ -29,8 +29,8 @@ log = logging.getLogger(__name__)
 _PT = ZoneInfo("America/Los_Angeles")
 _DISK_PATH = "/"
 # Systemd unit name. На проде сервис называется `llmgate.service`; локальный
-# unit может быть `neurogate.service`. Можно переопределить через ENV.
-_SERVICE_UNIT = os.getenv("NEUROGATE_SYSTEMD_UNIT", "llmgate")
+# unit может быть `llmgate.service`. Можно переопределить через ENV.
+_SERVICE_UNIT = os.getenv("LLMGATE_SYSTEMD_UNIT", "llmgate")
 
 
 def _fmt_uptime(seconds: float) -> str:
@@ -204,7 +204,7 @@ def format_report(date: str, data: dict[str, Any]) -> str:
     sysctl = data["systemd"]
 
     out: list[str] = [
-        f"🖥️ neurogate health {date} — {header}",
+        f"🖥️ llmgate health {date} — {header}",
         "",
         f"uptime: {_fmt_uptime(data['uptime'])}",
         f"{mp('load')}load: {load1:.2f} / {load5:.2f} / {load15:.2f} ({cpus} cpu)",
@@ -224,7 +224,7 @@ def format_report(date: str, data: dict[str, Any]) -> str:
         n_restarts = int(sysctl.get("NRestarts", "0") or "0")
         svc_bits.append(f"{mp('restarts')}{n_restarts} restarts")
     svc_bits.append(f"{_mb(data['self_rss'])}MB RSS")
-    out.append("neurogate: " + "  ·  ".join(svc_bits))
+    out.append("llmgate: " + "  ·  ".join(svc_bits))
     out.append(f"api 24h: {data['api_24h']} calls")
     out.append(f"{mp('errors')}errors 24h: {data['err_count']}")
     for ln in data["err_tail"]:
