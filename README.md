@@ -1,6 +1,6 @@
 # NeuroGate
 
-> ⚠️ **Early access (ранний доступ).** Баги ожидаемы. Если что-то отвалилось — открой [issue](../../issues/new?template=bug_report.md), посмотрим. Шаблон формы и подсказка какие данные приложить — `docs/bug-report.md`.
+> ⚠️ **Status: alpha / early access (v0.1).** Проект на активной разработке, API и конфиг могут меняться без особых церемоний до v1.0. Баги ожидаемы. Поломалось — открой [issue](../../issues/new?template=bug_report.md), посмотрим (шаблон отчёта — `docs/bug-report.md`). Звёздочка на репе и репорты помогают приоритетам.
 
 > **English**: free-tier LLM multiplexer — one OpenAI-compatible endpoint on top of 20+ providers (Gemini, Groq, Cerebras, SambaNova, OpenRouter, Cloudflare, GitHub Models, Mistral, NVIDIA, Z.AI, GigaChat, HuggingFace, Yandex, DeepSeek, Cohere, DashScope, FreeTheAi, Edge TTS, AIhorde, …) with automatic fallback on 429/5xx/quota, web search (`model: "web"`), vision (`model: "image"`), image generation (`image_gen`), TTS (`tts`), and ensembles (`moa` / `sc` / `debate` / `deep_search`). Drop-in replacement for the OpenAI API — point your SDK at `http://127.0.0.1:8765/v1` and use one of 30+ chain names as `model`. Self-hosted, $0/month. Config and docs below are in Russian; the code, config keys, and HTTP API are English. License: MIT.
 
@@ -284,7 +284,7 @@ cd /opt/neurogate && git pull && uv sync && systemctl restart neurogate
 
 ## Field notes — наблюдения с практики
 
-Публикуем как ранний доступ — это не бенчмарк, а заметки о том, как работают конкретные цепочки и провайдеры на наших задачах. Если у тебя картина другая — кидай в issues, обновим.
+Не бенчмарк, а заметки о том, как работают конкретные цепочки и провайдеры на наших задачах. Если у тебя картина другая — кидай в issues, обновим.
 
 - **`chat` chain** — стабильна. Фоллбэк-логика отрабатывает молча, на пользовательской стороне не заметно когда провайдер падает.
 - **`image_gen`** — рабочая, без сюрпризов. RU-модели (`Kandinsky`, `YandexART`) удерживают фотореализм лучше FLUX когда в промпте есть «digital painting»/«oil painting»: меньше «пластика», больше живой текстуры. FLUX отлично на абстрактном/иллюстративном.
