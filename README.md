@@ -22,6 +22,7 @@ neurogate даёт **OpenAI-совместимый API** — POST на `/v1/chat
 - **Бот для Telegram** — обёртка над OpenAI работает как есть, перенаправь её на neurogate.
 - **Скрипты автоматизации** — суммаризация писем, перевод документов, классификация тикетов, генерация постов.
 - **Генерация картинок через API** — `POST /v1/images/generations` (или `model: "image_gen"`). FLUX, Kandinsky, SDXL — бесплатно.
+- **Распознавание картинок (vision) через API** — `model: "image"` через `/v1/chat/completions`, OpenAI-совместимый формат `image_url` во входе. OCR, описание фото, чтение скриншотов, разбор схем.
 - **Озвучка / распознавание речи через API** — `POST /v1/audio/speech` (Edge TTS, безлимит) и `POST /v1/audio/transcriptions` (Whisper / Gemini).
 - **Перевод через API** — `POST /v1/translate` (или `model: "translation"`). Цепочка идёт через специализированные дешёвые переводчики (LibreTranslate, MyMemory, Yandex Translate, Cohere Aya), к chat-моделям обращается только в фоллбэке.
 - **Веб-поиск через API** — `model: "web"` (Gemini google_search + OpenRouter `:online`). Запросы с актуальными данными.
