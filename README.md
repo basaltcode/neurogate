@@ -544,7 +544,7 @@ curl -s http://127.0.0.1:8765/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "deep_search",
-    "messages": [{"role":"user","content":"почему небо синее"}],
+    "messages": [{"role":"user","content":"какие фронтенд-фреймворки актуальны для 2026 года"}],
     "max_tokens": 2000
   }' | python3 -m json.tool
 
