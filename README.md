@@ -1,4 +1,4 @@
-# llmgate
+# NeuroGate
 
 > ⚠️ **Early access (ранний доступ).** Баги ожидаемы. Если что-то отвалилось — открой [issue](../../issues/new?template=bug_report.md), посмотрим. Шаблон формы и подсказка какие данные приложить — `docs/bug-report.md`.
 
