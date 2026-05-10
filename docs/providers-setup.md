@@ -6,40 +6,48 @@
 
 ## Free quota at a glance
 
-Сводная таблица — сколько просят, что дают на бесплатном тире. Цифры отражают потолки на момент cmu confg-среза, провайдеры периодически режут/щедрят — `/v1/models` и dashboard покажут реальную картину.
+Сводная таблица. **Колонка «Cap»** — главное:
 
-| Провайдер | ENV-переменная | RPM | RPD / day | Monthly | Phone | Card | Особенность / quirk |
-|---|---|---|---|---|---|---|---|
-| **Groq** | `GROQ_API_KEY` | 30 | 1k–14.4k | — | нет | нет | Самый быстрый onboarding, скорость 300-1000+ т/с. Дубликаты ловят. |
-| **Gemini** | `GEMINI_API_KEY` | 10 | 250-1500 | — | нет | нет | Per-project квота: можно завести несколько GCP-проектов = ×N. Vision + tools. |
-| **Cerebras** | `CEREBRAS_API_KEY` | 5–30 | без RPD | — | да | нет | Узкий выбор моделей, но без суточного потолка. |
-| **SambaNova** | `SAMBANOVA_API_KEY` | без RPM-cap | 20/model | — | нет | нет | RPD на модель, 4 модели = 80 RPD на ключ. |
-| **NVIDIA NIM** | `NVIDIA_API_KEY` | 40 | без RPD | — | нет | нет | TTFB заметный (медленный). Использовать в `unlimited`/фоллбэк. |
-| **Z.ai** | `ZAI_API_KEY` | без cap | concurrency-only | — | нет | нет | Permanent free на GLM-4.5-Flash. China upstream — учти при чувствительном трафике. |
-| **OpenRouter (free)** | `OPENROUTER_API_KEY` | 20 | 50 (1000 с $10) | — | нет | нет* | $10 депозит → 1000 RPD на `:free`. Без депозита — 50 RPD общих. |
-| **Cloudflare Workers AI** | `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` | varies | 300 (Llama 70B) | — | нет | нет | Edge inference, низкая латентность. |
-| **GitHub Models** | `GITHUB_MODELS_TOKEN` | varies | 50–150 | — | нет | нет | gpt-5-mini в free tier. Auth через GitHub PAT. |
-| **Mistral** | `MISTRAL_API_KEY` | ~4 | — | — | да | нет | Experiment plan. Без RPD-cap, но узкий RPM. |
-| **HuggingFace** | `HF_TOKEN` | varies | varies | ~$0.10 | нет | нет | Общий кредит на paid sub-providers. PRO ($9/mo) = $2 кредит. |
-| **GigaChat (Sber)** | `GIGACHAT_AUTH_KEY` | varies | varies | 1M tok / 30 дней | да (РФ) | нет | Freemium 1M токенов на 30 дней. |
-| **FreeTheAi** | `FREETHEAI_API_KEY` | 10 | varies | — | нет (Discord) | нет | **Требует daily Discord `/checkin`** — иначе 403. |
-| **DeepSeek** | `DEEPSEEK_API_KEY` | без cap | — | 5M tok signup | да | нет | После signup-кредитов — PAYG. Off-peak 50–75% скидка. |
-| **Alibaba DashScope Intl** | `DASHSCOPE_API_KEY` | varies | — | 1M tok / model × 90д | да | да | Singapore region, 1M context на флагманах. |
-| **Cohere** | `COHERE_API_KEY` | 20 | — | 1000 calls | нет | нет | **Non-commercial only** на free tier (ToS). |
-| **OVHcloud** | — (anonymous) | 2 | — | — | нет | нет | Без ключа. EU-инфра. |
-| **LibreTranslate** | — (anonymous) | varies | — | — | нет | нет | Public mirrors. Перевод. |
-| **MyMemory** | `MYMEMORY_CONTACT_EMAIL` (опц) | — | 5k chars/IP | (50k chars с email) | нет | нет | Перевод. Email увеличивает квоту. |
-| **Edge TTS** | — (anonymous) | — | — | — | нет | нет | Microsoft TTS, безлимит. |
-| **AIhorde** | — (anonymous) | — | — | — | нет | нет | Image gen, community-distributed inference. |
+- 🟢 **effectively unlimited** — нет суточного/месячного потолка по запросам, ограничение только на RPM (или concurrency). Можно жечь хоть 24/7.
+- 🟡 **RPD-capped** — есть суточный потолок (счётчик ресетится 00:00 UTC, обычно).
+- 🔵 **monthly / token quota** — потолок по токенам или вызовам в месяц / в год; после исчерпания — paid либо ждать обновления.
+- 🟣 **anonymous / no key** — без ключа.
 
-`*` OpenRouter не требует карту для базового free tier, но $10 однократный депозит поднимает лимиты в 20 раз.
+| Cap | Провайдер | ENV-переменная | Лимит | Phone | Card | Особенность |
+|---|---|---|---|---|---|---|
+| 🟢 | **NVIDIA NIM** | `NVIDIA_API_KEY` | 40 RPM, без RPD | нет | нет | TTFB медленный — в `unlimited`/фоллбэк. |
+| 🟢 | **Z.ai** | `ZAI_API_KEY` | concurrency-only | нет | нет | GLM-4.5-Flash permanent free. China upstream. |
+| 🟢 | **Cerebras** | `CEREBRAS_API_KEY` | 5–30 RPM, без RPD | да | нет | Узкий выбор моделей, но потолка нет. Очень быстрый. |
+| 🟢 | **Mistral** | `MISTRAL_API_KEY` | ~4 RPM, без RPD | да | нет | Experiment plan. Узкий RPM, но без RPD. |
+| 🟡 | **SambaNova** | `SAMBANOVA_API_KEY` | 20 RPD **на модель** | нет | нет | 4 модели = 80 RPD на ключ. |
+| 🟡 | **Groq** | `GROQ_API_KEY` | 30 RPM, 1k–14.4k RPD | нет | нет | Самый быстрый onboarding, 300-1000+ т/с. Дубликаты ловят. |
+| 🟡 | **Gemini** | `GEMINI_API_KEY` | 10 RPM, 250-1500 RPD | нет | нет | Per-project: 2-3 GCP-проекта = ×N квота. Vision + tools. |
+| 🟡 | **OpenRouter (free)** | `OPENROUTER_API_KEY` | 20 RPM, 50 RPD (1000 с $10) | нет | нет\* | Без $10 депозита — 50 RPD на всех. С депозитом — ×20. |
+| 🟡 | **Cloudflare Workers AI** | `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` | 300 RPD (Llama 70B) | нет | нет | Edge inference, низкая латентность. Image gen бесплатно. |
+| 🟡 | **GitHub Models** | `GITHUB_MODELS_TOKEN` | 50–150 RPD | нет | нет | gpt-5-mini в free tier. Auth через GitHub PAT. |
+| 🟡 | **FreeTheAi** | `FREETHEAI_API_KEY` | 10 RPM, 1 concurrent | нет (Discord) | нет | **Требует daily Discord `/checkin`** — иначе 403. |
+| 🟡 | **OVHcloud** | — (anon) | 2 RPM на IP | нет | нет | EU-инфра, без ключа. |
+| 🔵 | **GigaChat (Sber)** | `GIGACHAT_AUTH_KEY` | Freemium quota / год | да (РФ) | нет | На наш опыт, чат слабоват, но **есть бесплатная Kandinsky image gen**. См. §11. |
+| 🔵 | **HuggingFace** | `HF_TOKEN` | ~$0.10/мес общий кредит | нет | нет | Кредит на paid sub-providers. PRO ($9/мес) = $2 кредит. |
+| 🔵 | **DeepSeek** | `DEEPSEEK_API_KEY` | 5M tok signup credits, дальше PAYG | да | нет | Off-peak 50–75% скидка. После кредитов — paid. |
+| 🔵 | **Alibaba DashScope Intl** | `DASHSCOPE_API_KEY` | 1M tok / model × 90 дней | да | да | Singapore region, 1M context на флагманах. |
+| 🔵 | **Cohere** | `COHERE_API_KEY` | 20 RPM, 1000 calls/мес | нет | нет | **Non-commercial only** на free tier (ToS). |
+| 🟣 | **LibreTranslate** | — (anon) | varies | нет | нет | Public mirrors. Перевод. |
+| 🟣 | **MyMemory** | `MYMEMORY_CONTACT_EMAIL` (опц) | 5k–50k chars/IP | нет | нет | Email повышает квоту 10×. |
+| 🟣 | **Edge TTS** | — (anon) | без лимита | нет | нет | Microsoft TTS, безлимит. |
+| 🟣 | **AIhorde** | — (anon) | community queue | нет | нет | Image gen, community inference. |
+
+\* OpenRouter не требует карту для базового free tier, но $10 однократный депозит поднимает лимиты в 20 раз.
+
+**TL;DR.** Если нужен **24/7-бэкбон** — собирай цепочку из 🟢 (NVIDIA + Z.ai + Cerebras + Mistral): они не упираются в суточный потолок. Если нужен **широкий пул моделей** — добавляй 🟡 (Groq, Gemini, OpenRouter, GitHub) — они дают разнообразие, но ресетятся каждые 24ч. 🔵 — на конкретные ниши (Cohere для не-коммерческого RU, DeepSeek для signup-кредитов, GigaChat для Kandinsky).
 
 ### Quick suggestion: какие 2-3 ключа добавить первыми
 
-- **Самый быстрый старт:** Groq (без верификаций) → даёт мгновенный отклик и приличную квоту.
+- **Самый быстрый старт:** Groq (без верификаций) → мгновенный отклик и приличная квота.
 - **Долгий контекст / vision:** Gemini.
-- **Бэкап без RPD-капа:** Cerebras (одно подтверждение телефона) или SambaNova.
-- **Русский:** Yandex Alice (`yandex_foundation` kind) — лучше для RU чем GigaChat по нашим наблюдениям.
+- **Бэкбон без RPD-капа:** Cerebras (одно подтверждение телефона) или NVIDIA.
+- **Русский:** Yandex Alice (`yandex_foundation` kind) — на наш опыт лучше GigaChat для RU.
+- **Картинки бесплатно:** Cloudflare (FLUX/SDXL без RPD на image gen) или GigaChat (Kandinsky — фотореализм держит лучше FLUX).
 
 ## Провайдеры
 
@@ -128,7 +136,8 @@
 - **Регистрация**: https://developers.sber.ru/studio (требует подтверждённый аккаунт Сбера, телефон РФ)
 - **Получить ключ**: *Личное пространство* → *Мой GigaChat API* → *Получить новый ключ* → выдают `Authorization key` (это уже base64 от `client_id:client_secret`, готовый для `Basic`-авторизации)
 - **ENV**: `GIGACHAT_AUTH_KEY` (значение строки *Authorization key* как есть)
-- **Scope**: `GIGACHAT_API_PERS` — **Freemium** для физлиц, 1 млн токенов на 30 дней (включая Pro/Max-модели). После исчерпания квоты — billed.
+- **Scope**: `GIGACHAT_API_PERS` — **Freemium** для физлиц с годовой квотой токенов (точные цифры Сбер периодически меняет — смотри актуальное на странице тарифа). По нашему опыту, на личное использование хватает с запасом.
+- **Чат vs картинки**: текстовые модели (GigaChat 2 / 2-Pro / 2-Max) на наш опыт **слабее даже отдельных Qwen / GLM** на русском, и заметно отстают от Yandex Alice. Но **бесплатная Kandinsky image gen** в этом же ключе — единственный способ получить русскоязычно-обученную text-to-image модель «из коробки», и она хорошо держит фотореализм когда в промпте есть «digital painting» / «oil painting» (где FLUX даёт «пластик»). Стоит держать в `image_gen` chain ради этого.
 - **Нюанс 1**: GigaChat отдаёт сертификат, подписанный *Russian Trusted Root CA* — стандартные системные truststore (на macOS/Linux вне РФ) его не знают. В конфиге для `kind: gigachat` стоит `verify_ssl: false`. Для прода — добавить Russian Trusted Sub CA в системный truststore.
 - **Нюанс 2**: авторизация двухступенчатая — провайдер обменивает `Authorization key` на короткоживущий OAuth access-token и кэширует его. Этот flow реализован внутри `kind: gigachat`, ничего вручную делать не нужно.
 - **Биллинг и расход**: https://developers.sber.ru/studio (раздел *Проекты* → *Лицевой счёт*).

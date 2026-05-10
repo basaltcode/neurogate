@@ -1,7 +1,8 @@
-# Auto-Audit & Add Models — план автоматизации
+# Auto-Audit & Add Models — пайплайн автоматического обновления конфига
 
-Дата составления: 2026-04-26 (ревизия 2026-04-29).
-Контекст: ручной аудит «новых free AI API» на 26.04 показал, что 3 из 13 пунктов — галлюцинации (`gemini:3.1-flash`, `github:grok-3`, `openrouter:ling-2.6-1t:free` уже добавлен). Нужен pipeline, который ловит враньё **до** правки `config.yaml`.
+> Контрибьюторская документация. Описывает, как новые модели добавляются в `config.yaml` через еженедельный полу-автомат с защитой от галлюцинаций. Можно прочитать если интересно как мы держим конфиг в актуальном состоянии или хочется добавить аналогичную проверку в свой форк.
+
+**Контекст возникновения.** Ручной аудит «новых free AI API» в апреле 2026 показал, что 3 из 13 предложенных моделей оказались галлюцинациями (модель не существует у вендора, или существует но другой версии). Нужен pipeline, который ловит враньё **до** правки `config.yaml`.
 
 ## Цель
 
@@ -102,15 +103,15 @@ Output: `scans/audit-YYYY-MM-DD-verified.json` — `[{name, kind, model, status,
 Плюс: WebSearch/WebFetch работают, ключи не дублируются, прод физически недостижим.
 
 ```bash
-# crontab -e
-0 10 * * 1 cd /Users/niko/Desktop/llmgate && bash scans/run_weekly_audit.sh
+# crontab -e — путь подставь свой
+0 10 * * 1 cd <path-to-llmgate-checkout> && bash scans/run_weekly_audit.sh
 ```
 
 `scans/run_weekly_audit.sh`:
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-cd /Users/niko/Desktop/llmgate
+cd "$(dirname "$0")/.."
 WT="../llmgate-audit-$(date +%F)"
 git worktree add "$WT" -b "audit/auto-$(date +%F)"
 cd "$WT"
@@ -123,7 +124,6 @@ git push -u origin "audit/auto-$(date +%F)"
 gh pr create --base main --title "audit: new free models $(date +%F)" --body-file scans/audit-*-verified.md
 # worktree оставляем — после merge PR чистится вручную:
 #   git worktree remove ../llmgate-audit-YYYY-MM-DD
-# Автоматическая очистка не делается, чтобы не потерять незамерженные правки.
 ```
 
 ---
@@ -135,8 +135,8 @@ gh pr create --base main --title "audit: new free models $(date +%F)" --body-fil
 | 1 | `scans/audit_catalog.py` | **готово** (Stage 1, catalog diff, snapshot mode) |
 | 2 | `scans/audit_verifier.py` | **готово** (Stage 2, dedup + smoke + identity-probe) |
 | 3 | `scans/run_weekly_audit.sh` | **готово** (driver для cron) |
-| 4 | `scans/catalog-snapshot.json` | **bootstrap saved** 2026-04-29 |
-| 5 | `tests/bench_new.py` | TODO (Stage 3, обёртка над bench_latency + ru_bench) |
+| 4 | `scans/catalog-snapshot.json` | bootstrap saved |
+| 5 | `tests/bench_new.py` | TODO (Stage 3, обёртка над bench_latency + ru_bench). Бенчевые скрипты у нас сейчас приватные — для своего форка пишутся под собственный набор провайдеров. |
 | 6 | `scans/paid_models_blocklist.yaml` | **готово** (mistral/zai substrings + openrouter `:online`/`:nitro`) |
 | 7 | `.github/PULL_REQUEST_TEMPLATE/audit.md` | TODO (checklist для review) |
 

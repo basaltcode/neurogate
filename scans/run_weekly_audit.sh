@@ -3,8 +3,8 @@
 # Запуск: вручную или через `crontab -e` (см. ниже).
 # НЕ деплоит, НЕ мержит, НЕ редактирует chains: — только candidates.json + verified.json.
 #
-# crontab пример (понедельник 10:00 MSK = 07:00 UTC):
-#   0 7 * * 1 cd /Users/niko/Desktop/llmgate && bash scans/run_weekly_audit.sh >> scans/cron.log 2>&1
+# crontab пример (понедельник 10:00 MSK = 07:00 UTC) — путь подставь свой:
+#   0 7 * * 1 cd <path-to-llmgate-checkout> && bash scans/run_weekly_audit.sh >> scans/cron.log 2>&1
 
 set -euo pipefail
 
