@@ -6,40 +6,50 @@
 
 ## Free quota at a glance
 
-Сводная таблица. **Колонка «Cap»** — главное:
+Сводная таблица. Две колонки маркеров:
 
+**Cap (квота):**
 - 🟢 **effectively unlimited** — нет суточного/месячного потолка по запросам, ограничение только на RPM (или concurrency). Можно жечь хоть 24/7.
 - 🟡 **RPD-capped** — есть суточный потолок (счётчик ресетится 00:00 UTC, обычно).
-- 🔵 **monthly / token quota** — потолок по токенам или вызовам в месяц / в год; после исчерпания — paid либо ждать обновления.
+- 🔵 **monthly / token quota** — потолок по токенам или вызовам в месяц / в год.
 - 🟣 **anonymous / no key** — без ключа.
 
-| Cap | Провайдер | ENV-переменная | Лимит | Phone | Card | Особенность |
-|---|---|---|---|---|---|---|
-| 🟢 | **NVIDIA NIM** | `NVIDIA_API_KEY` | 40 RPM, без RPD | нет | нет | TTFB медленный — в `unlimited`/фоллбэк. |
-| 🟢 | **Z.ai** | `ZAI_API_KEY` | concurrency-only | нет | нет | GLM-4.5-Flash permanent free. China upstream. |
-| 🟢 | **Cerebras** | `CEREBRAS_API_KEY` | 5–30 RPM, без RPD | да | нет | Узкий выбор моделей, но потолка нет. Очень быстрый. |
-| 🟢 | **Mistral** | `MISTRAL_API_KEY` | ~4 RPM, без RPD | да | нет | Experiment plan. Узкий RPM, но без RPD. |
-| 🟡 | **SambaNova** | `SAMBANOVA_API_KEY` | 20 RPD **на модель** | нет | нет | 4 модели = 80 RPD на ключ. |
-| 🟡 | **Groq** | `GROQ_API_KEY` | 30 RPM, 1k–14.4k RPD | нет | нет | Самый быстрый onboarding, 300-1000+ т/с. Дубликаты ловят. |
-| 🟡 | **Gemini** | `GEMINI_API_KEY` | 10 RPM, 250-1500 RPD | нет | нет | Per-project: 2-3 GCP-проекта = ×N квота. Vision + tools. |
-| 🟡 | **OpenRouter (free)** | `OPENROUTER_API_KEY` | 20 RPM, 50 RPD (1000 с $10) | нет | нет\* | Без $10 депозита — 50 RPD на всех. С депозитом — ×20. |
-| 🟡 | **Cloudflare Workers AI** | `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` | 300 RPD (Llama 70B) | нет | нет | Edge inference, низкая латентность. Image gen бесплатно. |
-| 🟡 | **GitHub Models** | `GITHUB_MODELS_TOKEN` | 50–150 RPD | нет | нет | gpt-5-mini в free tier. Auth через GitHub PAT. |
-| 🟡 | **FreeTheAi** | `FREETHEAI_API_KEY` | 10 RPM, 1 concurrent | нет (Discord) | нет | **Требует daily Discord `/checkin`** — иначе 403. |
-| 🟡 | **OVHcloud** | — (anon) | 2 RPM на IP | нет | нет | EU-инфра, без ключа. |
-| 🔵 | **GigaChat (Sber)** | `GIGACHAT_AUTH_KEY` | Freemium quota / год | да (РФ) | нет | На наш опыт, чат слабоват, но **есть бесплатная Kandinsky image gen**. См. §11. |
-| 🔵 | **HuggingFace** | `HF_TOKEN` | ~$0.10/мес общий кредит | нет | нет | Кредит на paid sub-providers. PRO ($9/мес) = $2 кредит. |
-| 🔵 | **DeepSeek** | `DEEPSEEK_API_KEY` | 5M tok signup credits, дальше PAYG | да | нет | Off-peak 50–75% скидка. После кредитов — paid. |
-| 🔵 | **Alibaba DashScope Intl** | `DASHSCOPE_API_KEY` | 1M tok / model × 90 дней | да | да | Singapore region, 1M context на флагманах. |
-| 🔵 | **Cohere** | `COHERE_API_KEY` | 20 RPM, 1000 calls/мес | нет | нет | **Non-commercial only** на free tier (ToS). |
-| 🟣 | **LibreTranslate** | — (anon) | varies | нет | нет | Public mirrors. Перевод. |
-| 🟣 | **MyMemory** | `MYMEMORY_CONTACT_EMAIL` (опц) | 5k–50k chars/IP | нет | нет | Email повышает квоту 10×. |
-| 🟣 | **Edge TTS** | — (anon) | без лимита | нет | нет | Microsoft TTS, безлимит. |
-| 🟣 | **AIhorde** | — (anon) | community queue | нет | нет | Image gen, community inference. |
+**Privacy (что провайдер делает с твоими промптами):**
+- 🔒 **private** — провайдер заявляет «не обучаем на твоих данных» (free tier).
+- ⚠️ **trains on free tier** — на free-тире промпты/ответы могут уходить в обучение. Не клади чувствительное.
+- 🟣 **public-by-design** — community-инфраструктура, твои промпты видны другим.
+
+Цифры на free-тирах часто меняются — `/v1/models` и dashboard покажут реальную картину. Privacy-метки взяты из публично заявленных политик; они не аудит, а ориентир.
+
+| Cap | Privacy | Провайдер | ENV-переменная | Лимит | Phone | Card | Особенность |
+|---|---|---|---|---|---|---|---|
+| 🟢 | 🔒 | **NVIDIA NIM** | `NVIDIA_API_KEY` | 40 RPM, без RPD | нет | нет | TTFB медленный — в `unlimited`/фоллбэк. |
+| 🟢 | 🔒 | **Z.ai** | `ZAI_API_KEY` | concurrency-only | нет | нет | GLM-4.5-Flash permanent free. China upstream — оф. заявляет «no training», но юрисдикция КНР. |
+| 🟢 | 🔒 | **Cerebras** | `CEREBRAS_API_KEY` | 5–30 RPM, без RPD | да | нет | Узкий выбор моделей, но потолка нет. Enterprise-friendly TOS. |
+| 🟢 | ⚠️ | **Mistral** | `MISTRAL_API_KEY` | ~4 RPM, без RPD | да | нет | Experiment plan. На free тренируется на твоих промптах. Paid plan — opt-out. |
+| 🟡 | 🔒 | **SambaNova** | `SAMBANOVA_API_KEY` | 20 RPD **на модель** | нет | нет | 4 модели = 80 RPD на ключ. Enterprise-friendly. |
+| 🟡 | ⚠️ | **Groq** | `GROQ_API_KEY` | 30 RPM, 1k–14.4k RPD | нет | нет | Самый быстрый onboarding. Privacy policy позволяет использовать промпты для improvements. |
+| 🟡 | ⚠️ | **Gemini (AI Studio)** | `GEMINI_API_KEY` | 10 RPM, 250-1500 RPD | нет | нет | Per-project: 2-3 GCP-проекта = ×N квота. **На free tier Google использует промпты для улучшения моделей.** Paid Vertex — opt-out. |
+| 🟡 | 🔒 | **Cloudflare Workers AI** | `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` | 300 RPD (Llama 70B) | нет | нет | Edge inference, image gen бесплатно. CF не тренирует. |
+| 🟡 | 🔒 | **GitHub Models** | `GITHUB_MODELS_TOKEN` | 50–150 RPD | нет | нет | gpt-5-mini в free tier. Microsoft не тренирует на промптах GitHub Models. |
+| 🟡 | ⚠️ | **OpenRouter (free)** | `OPENROUTER_API_KEY` | 20 RPM, 50 RPD (1000 с $10) | нет | нет\* | Каждая `:free`-модель имеет свою policy — у некоторых тренировка включена. Читай каточку модели. |
+| 🟡 | ⚠️ | **FreeTheAi** | `FREETHEAI_API_KEY` | 10 RPM, 1 concurrent | нет (Discord) | нет | **Требует daily Discord `/checkin`**. Privacy не задекларирована — считай что промпты видят. |
+| 🟡 | 🔒 | **OVHcloud** | — (anon) | 2 RPM на IP | нет | нет | EU-инфра, без ключа, не тренирует. |
+| 🔵 | ⚠️ | **GigaChat (Sber)** | `GIGACHAT_AUTH_KEY` | Freemium quota / год | да (РФ) | нет | Чат слабоват, но **есть бесплатная Kandinsky image gen**. Free tier — обучаются. См. §11. |
+| 🔵 | ⚠️ | **HuggingFace** | `HF_TOKEN` | ~$0.10/мес общий кредит | нет | нет | Кредит на paid sub-providers. Каждый sub-provider — своя privacy policy. |
+| 🔵 | ⚠️ | **DeepSeek** | `DEEPSEEK_API_KEY` | 5M tok signup credits, дальше PAYG | да | нет | Off-peak 50–75% скидка. **CN-юрисдикция, тренируются на промптах.** |
+| 🔵 | ⚠️ | **Alibaba DashScope Intl** | `DASHSCOPE_API_KEY` | 1M tok / model × 90 дней | да | да | Singapore region, 1M context на флагманах. CN-юрисдикция. |
+| 🔵 | 🔒 | **Cohere** | `COHERE_API_KEY` | 20 RPM, 1000 calls/мес | нет | нет | **Non-commercial only** на free tier (ToS). Не тренируются. |
+| 🟣 | 🟣 | **LibreTranslate** | — (anon) | varies | нет | нет | Public mirror. Логи могут вестись на стороне зеркала. |
+| 🟣 | 🟣 | **MyMemory** | `MYMEMORY_CONTACT_EMAIL` (опц) | 5k–50k chars/IP | нет | нет | Community translation memory — твои тексты могут пополнять корпус. |
+| 🟣 | 🔒 | **Edge TTS** | — (anon) | без лимита | нет | нет | MS Edge — голос синтезируется serverside, текст не сохраняется. |
+| 🟣 | 🟣 | **AIhorde** | — (anon) | community queue | нет | нет | Распределённый inference — твой prompt видит worker, который на нём генерирует картинку. |
 
 \* OpenRouter не требует карту для базового free tier, но $10 однократный депозит поднимает лимиты в 20 раз.
 
-**TL;DR.** Если нужен **24/7-бэкбон** — собирай цепочку из 🟢 (NVIDIA + Z.ai + Cerebras + Mistral): они не упираются в суточный потолок. Если нужен **широкий пул моделей** — добавляй 🟡 (Groq, Gemini, OpenRouter, GitHub) — они дают разнообразие, но ресетятся каждые 24ч. 🔵 — на конкретные ниши (Cohere для не-коммерческого RU, DeepSeek для signup-кредитов, GigaChat для Kandinsky).
+**TL;DR (квоты).** Если нужен **24/7-бэкбон** — собирай цепочку из 🟢 (NVIDIA + Z.ai + Cerebras + Mistral): они не упираются в суточный потолок. Если нужен **широкий пул моделей** — добавляй 🟡 (Groq, Gemini, OpenRouter, GitHub) — они дают разнообразие, но ресетятся каждые 24ч. 🔵 — на конкретные ниши (Cohere для не-коммерческого RU, DeepSeek для signup-кредитов, GigaChat для Kandinsky).
+
+**TL;DR (privacy).** Для **чувствительного трафика** (внутренние документы, персональные данные клиентов) бери только 🔒: NVIDIA, Cerebras, Cloudflare, GitHub Models, Cohere, SambaNova. Z.ai заявляет no-training, но юрисдикция КНР — для коммерческой тайны не годится. Всё что 🟣 — public-by-design, такие провайдеры можно использовать только для безличных текстов (переводы общего назначения, генерация фоновых картинок). Если в чейне смешаны провайдеры — фоллбэк может уйти на ⚠️-провайдера; для строгого режима оставь только 🔒-провайдеров либо подними отдельный `chains: private:` под чувствительный трафик.
 
 ### Quick suggestion: какие 2-3 ключа добавить первыми
 
@@ -381,7 +391,7 @@
   - если за VPN — **обязательно укажи**, какой VPN и какая страна выхода
 - [ ] **Город** (грубо — Москва / СПб / регион / зарубежье). Не для слежки, а потому что некоторые провайдеры блокируют upstream-эндпоинты только в части регионов.
 - [ ] **Какой клиент** и его версия:
-  - Cursor / Claude Code / Continue / Cline / Aider / curl / собственный скрипт / браузер
+  - Cursor / Claude Code / Codex / OpenCode / Continue / Cline / curl / собственный скрипт / браузер
   - версия (например, `Cursor 1.4.2`)
 - [ ] **Какая модель / chain** была запрошена — посмотри в настройках клиента, поле `model:`. Например: `auto`, `chat`, `deepseek:reasoner`, `paid`.
 

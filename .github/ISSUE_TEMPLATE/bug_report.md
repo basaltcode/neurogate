@@ -27,7 +27,7 @@ neurogate в раннем доступе — баги ожидаемы. Чтоб
 
 ## Клиент
 
-<!-- Cursor / Claude Code / Continue / Cline / Aider / curl / свой скрипт + версия -->
+<!-- Cursor / Claude Code / Codex / OpenCode / Continue / Cline / curl / свой скрипт + версия -->
 
 ## Модель / chain
 
