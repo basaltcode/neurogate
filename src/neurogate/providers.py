@@ -2083,7 +2083,7 @@ class YandexARTImageProvider:
     Двухэтапный flow: POST /foundationModels/v1/imageGenerationAsync → operation_id;
     дальше polling https://operation.api.cloud.yandex.net/operations/{id} до done=True.
     Картинка приходит base64 в `response.image`. Тарификация: 2,24 ₽/картинка
-    (покрывается грантом 6 000 ₽ Yandex AI Studio до 22.10.2026).
+    (биллится из Yandex AI Studio баланса).
 
     chat()/chat_stream() бросают NotImplementedError — image-only.
     """

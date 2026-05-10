@@ -1418,14 +1418,14 @@ providers:
 
   # === Yandex AI Studio (Foundation Models) ===
   # OpenAI-compat /v1/chat/completions, auth: Authorization: Api-Key <key>.
-  # Покрывается грантом 6 000 ₽ до 22.10.2026 (Yandex AI Studio + Search/Vision/OCR).
+  # Биллится из Yandex AI Studio баланса (новым аккаунтам обычно дают grant).
   # quota_limited: true — провайдер потребляет грант/деньги, в дашборде помечен 💳.
   # api_key_env переиспользует YANDEX_TRANSLATE_KEY (тот же сервисный аккаунт),
   # folder_id берётся из YANDEX_FOLDER_ID env.
 
   # Alice AI LLM (Yandex, окт 2025) — флагман над YandexGPT-Pro по диалогу и длинному
   # контексту, лидер RU-бенчмарка SLAVA. Цена ~0.50/1.20 ₽ за 1K input/output —
-  # дороже Pro в 2-3×, но грант 6 000 ₽ до 22.10.2026 покрывает.
+  # дороже Pro в 2-3×, но если есть Yandex grant — покрывается.
   - name: yandex:alice
     kind: yandex_foundation
     model: aliceai-llm/latest
@@ -2177,7 +2177,7 @@ chains:
     - nvidia:nemotron-llama-49b       # AA 15 · RU 18 · rpm 40
 
   # --- quota: бесплатные RU-провайдеры с ограниченной квотой (грант/PERS-tier) ---
-  # Yandex AI Studio — грант 6 000 ₽ до 22.10.2026 (общий с translate/art/vision).
+  # Yandex AI Studio (общий баланс с translate/art/vision).
   # GigaChat PERS — 1M токенов на 30 дней per-account (общий пул на 2/2-pro/2-max).
   # Использовать когда нужна сильная RU-генерация и unlimited-цепочка не тянет.
   # Порядок: RU desc → quality → latency.

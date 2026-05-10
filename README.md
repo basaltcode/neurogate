@@ -2,7 +2,7 @@
 
 > ⚠️ **Early access (ранний доступ).** Баги ожидаемы. Если что-то отвалилось — открой [issue](../../issues/new?template=bug_report.md), посмотрим. Шаблон формы и подсказка какие данные приложить — `docs/bug-report.md`.
 
-> **English**: free-tier LLM multiplexer — one OpenAI-compatible endpoint on top of 10+ providers (Gemini, Groq, Cerebras, SambaNova, OpenRouter, Cloudflare, GitHub Models, Mistral, NVIDIA, Z.AI, GigaChat, HuggingFace) with automatic fallback on 429/5xx/quota, web search (`model: "web"`), vision (`model: "image"`), and ensembles (`moa` / `sc` / `debate` / `deep_search`). Drop-in replacement for the OpenAI API — point your SDK at `http://127.0.0.1:8765/v1` and use one of 16 chain names as `model`. Self-hosted, $0/month. Config and docs below are in Russian; the code, config keys, and HTTP API are English. License: MIT.
+> **English**: free-tier LLM multiplexer — one OpenAI-compatible endpoint on top of 20+ providers (Gemini, Groq, Cerebras, SambaNova, OpenRouter, Cloudflare, GitHub Models, Mistral, NVIDIA, Z.AI, GigaChat, HuggingFace, Yandex, DeepSeek, Cohere, DashScope, FreeTheAi, Edge TTS, AIhorde, …) with automatic fallback on 429/5xx/quota, web search (`model: "web"`), vision (`model: "image"`), image generation (`image_gen`), TTS (`tts`), and ensembles (`moa` / `sc` / `debate` / `deep_search`). Drop-in replacement for the OpenAI API — point your SDK at `http://127.0.0.1:8765/v1` and use one of 30+ chain names as `model`. Self-hosted, $0/month. Config and docs below are in Russian; the code, config keys, and HTTP API are English. License: MIT.
 
 **Бесплатный мультиплексор LLM-провайдеров: один OpenAI-совместимый endpoint поверх 10+ free-тиров с автоматическим фоллбэком, веб-поиском, распознаванием картинок и ансамблями моделей.**
 
@@ -317,28 +317,47 @@ cd /opt/neurogate && git pull && uv sync && systemctl restart neurogate
 
 ## Поддерживаются из коробки
 
+**Chat / reasoning / vision:**
+
 | kind | endpoint | особенность |
 |---|---|---|
-| `gemini` | native SDK | 1M контекст |
+| `gemini` | native SDK | 1M контекст, vision, web-search tool |
 | `groq` | `api.groq.com` | очень быстрый (300-1000+ т/с) |
 | `cerebras` | `api.cerebras.ai` | 1400+ т/с на 235B |
 | `sambanova` | `api.sambanova.ai` | нет суточного лимита |
 | `nvidia` | `integrate.api.nvidia.com` | нет суточного лимита |
-| `zai` | `api.z.ai` | permanent free, privacy-ok |
-| `openrouter` | `openrouter.ai` | агрегатор |
-| `cloudflare` | Workers AI | edge |
-| `github` | GitHub Models | PAT-auth |
-| `gigachat` | SberDevices GigaChat | Basic→OAuth, Russian Trusted Root CA |
-| `openai` | любой OpenAI-compat | твой base_url |
+| `zai` | `api.z.ai` | permanent free GLM-4.5-Flash |
+| `openrouter` | `openrouter.ai` | агрегатор + `:online` web search |
+| `cloudflare` | Workers AI | edge inference |
+| `github` | GitHub Models | gpt-5-mini, PAT-auth |
+| `mistral` | `api.mistral.ai` | Experiment plan |
+| `huggingface` | HF Inference Router | прокси к paid sub-providers |
+| `dashscope` | Alibaba International | Qwen flagships, 1M context |
+| `deepseek` | `api.deepseek.com` | DeepSeek V3.2/R1 |
+| `cohere` | `api.cohere.com` | Command-R, Aya для русского |
+| `freetheai` | `api.freetheai.xyz` | proxy к gpt-5/claude/gemini, daily checkin |
+| `gigachat` | SberDevices | Basic→OAuth, RU Trusted Root CA |
+| `yandex_foundation` | Yandex Cloud | Alice — лучший RU из бесплатных |
+| `pollinations` | `pollinations.ai` | image+text без ключа |
+| `ovhcloud` | OVHcloud AI Endpoints | EU без ключа |
+| `openai` | любой OpenAI-compat | твой base_url для exotic |
 
-Полный список chains, providers и моделей — в [config.yaml.example](config.yaml.example). Разбор основных цепочек — ниже в [§ Цепочки](#цепочки).
+**Image generation:** `cloudflare` (FLUX/SDXL/Phoenix/DreamShaper), `gemini` (nano-banana), `gigachat` (Kandinsky), `yandex_art` (YandexART), `pollinations` (Flux/Sana/Turbo), `freetheai_image` (gpt-image-2, Seedream-v4 etc.), `aihorde` (community).
+
+**Audio:** `edge_tts` (Microsoft Edge TTS, безлимит), `groq_whisper` (распознавание), `gemini` (распознавание + sound classification), `hf_space_audio` (Stable-Audio-Open для SFX).
+
+**Translation:** `libretranslate`, `mymemory`, `yandex_translate`, `cohere_translate` (Aya).
+
+**Embeddings / rerank / moderation:** `voyage_embed`, `jina_embed`, `cohere_embed`, `gemini_embed`, `mistral_embed`, `cloudflare_embed` / `voyage_rerank`, `jina_rerank`, `cohere_rerank` / `openai_moderation`, `mistral_moderation`, `llama_guard` (Cloudflare).
+
+Полный список chains, providers и моделей — в [config.yaml.example](config.yaml.example). Разбор основных цепочек — ниже в [§ Цепочки](#цепочки). Гайд по получению ключей у каждого провайдера — [docs/providers-setup.md](docs/providers-setup.md).
 
 ### Контроль расхода (платные/grant-провайдеры)
 
 Большинство провайдеров — permanent free, но у пары есть биллинг или grant-квота, которую полезно мониторить:
 
-- **GigaChat (Сбер)** — Freemium 1М токенов/30 дней, после — billed. Проекты, лицевой счёт и расход: [developers.sber.ru/studio](https://developers.sber.ru/studio/)
-- **Yandex Cloud** (YandexGPT/YandexART/Translate, AI Studio Search/Vision/OCR) — расход, гранты и бюджет-алерты: [center.yandex.cloud/billing/accounts](https://center.yandex.cloud/billing/accounts/). На текущем аккаунте активны два гранта: **4 000 ₽ до 22.06.2026** (все сервисы, кроме GPU Compute / Marketplace / Support / Postbox) и **6 000 ₽ до 22.10.2026** (включая Yandex AI Studio + Search/Vision/OCR).
+- **GigaChat (Сбер)** — Freemium квота, после — billed. Проекты, лицевой счёт и расход: [developers.sber.ru/studio](https://developers.sber.ru/studio/).
+- **Yandex Cloud** (YandexGPT/YandexART/Translate, AI Studio Search/Vision/OCR) — новым аккаунтам обычно дают grant-квоту в рублях на 6-12 месяцев. Расход, гранты и бюджет-алерты: [center.yandex.cloud/billing/accounts](https://center.yandex.cloud/billing/accounts/).
 - **OpenRouter Opus** (`paid` chain) — отдельный ключ `OPENROUTER_PAID_API_KEY`, остаток баланса виден в OR dashboard.
 
 ## Проверка и примеры
@@ -620,20 +639,38 @@ providers:
 
 ### Эндпоинты
 
+OpenAI-совместимые (drop-in для существующих клиентов):
+
+| Путь | Метод | Auth | Назначение |
+|---|---|---|---|
+| `/v1/chat/completions` | POST | **Bearer** | основной chat (поддерживает все цепочки + ad-hoc) |
+| `/v1/models` | GET | **Bearer** | список виртуальных моделей и провайдеров |
+| `/v1/embeddings` | POST | **Bearer** | embeddings через `embed` / `embed_code` chain |
+| `/v1/audio/speech` | POST | **Bearer** | TTS (цепочка `tts` → Edge TTS) |
+| `/v1/audio/transcriptions` | POST | **Bearer** | speech-to-text (цепочка `audio` → Whisper/Gemini) |
+| `/v1/audio/sfx` | POST | **Bearer** | SFX/ambient generation (цепочка `sfx` → HF Space) |
+| `/v1/images/generations` | POST | **Bearer** | text-to-image (цепочка `image_gen`) |
+| `/v1/images/edits` | POST | **Bearer** | image editing (цепочка `image_edit`) |
+| `/v1/moderations` | POST | **Bearer** | text moderation (цепочка `moderation`) |
+| `/v1/messages` | POST | **Bearer** | Anthropic Messages API совместимость |
+
+Управление и обзор:
+
 | Путь | Метод | Auth | Назначение |
 |---|---|---|---|
 | `/health` | GET | нет | минимальный liveness (`{"ok":true}`) |
-| `/dashboard` | GET | нет (HTML) | веб-UI: цепочки, лимиты, исходы, латентность |
+| `/dashboard` | GET | нет (HTML) | веб-UI: цепочки, лимиты, исходы, латентность, тестовый чат |
 | `/metrics` | GET | **Bearer** | Prometheus метрики (RPS, latency, исходы по провайдерам) |
 | `/v1/health` | GET | **Bearer** | detailed: default chain + список цепочек |
-| `/v1/models` | GET | **Bearer** | список виртуальных моделей и провайдеров |
 | `/v1/stats` | GET | **Bearer** | usage по провайдерам (rpd/rpm + счётчики) |
 | `/v1/metrics.json` | GET | **Bearer** | JSON-версия Prometheus счётчиков + средняя латентность |
-| `/v1/chat/completions` | POST | **Bearer** | основной chat-эндпоинт (OpenAI-совместимый) |
+| `/v1/calls` | GET | **Bearer** | история запросов для дашборда |
 | `/v1/chains/edit` | GET | **Bearer** | снимок цепочек + пул провайдеров для редактора |
-| `/v1/chains` | PUT | **Bearer** | переписать `chains:`/`default_chain:` в config.yaml + hot reload |
+| `/v1/chains` | PUT | **Bearer** | переписать `chains:`/`default_chain:` + hot reload без рестарта |
+| `/v1/audit/run` | POST | **Bearer** | ручной запуск еженедельного аудита моделей |
+| `/v1/audit/{date}` | GET | **Bearer** | результаты конкретного аудита |
 
-`model` в запросе: `chat` (default), `code`, `latency`, `quality`, `chat_en`, `unlimited`, `image`, `web`, `reasoning_quality`, `reasoning_deep`, `paid`, `moa`, `sc`, `debate`, `deep_search`, `auto`, либо конкретный провайдер из `/v1/models`, либо ad-hoc `kind:model_id` (см. ниже).
+`model` в запросе: `chat` (default), `chat_fast`, `chat_en`, `code`, `code_fast`, `latency`, `quality`, `unlimited`, `quota`, `image`, `web`, `reasoning_quality`, `reasoning_deep`, `paid`, `translation`, `translate_adaptive`, `moa`, `sc`, `debate`, `deep_search`, `image_gen`, `image_edit`, `audio`, `tts`, `sfx`, `embed`, `embed_code`, `rerank`, `moderation`, `moderation_image`, `moderation_jailbreak`, `moderation_ru`, `auto`, либо конкретный провайдер из `/v1/models`, либо ad-hoc `kind:model_id` (см. ниже). Полный список и текущий состав каждой — `GET /v1/health` или dashboard.
 
 ### Ad-hoc модели (любая `kind:model_id`)
 

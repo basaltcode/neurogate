@@ -808,7 +808,7 @@ def _build_provider(
         # Yandex AI Studio /v1/chat/completions — OpenAI-compat, но:
         #   - Authorization: Api-Key <key> (НЕ Bearer)
         #   - model URI: gpt://<folder_id>/<short_model>/<version>
-        # Покрывается грантом 6 000 ₽ до 22.10.2026 (Yandex AI Studio).
+        # Биллится из Yandex AI Studio баланса.
         folder_id = entry.get("folder_id") or os.getenv("YANDEX_FOLDER_ID", "")
         if not folder_id:
             log.warning("skipping %s: YANDEX_FOLDER_ID missing", name)
