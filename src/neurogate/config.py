@@ -94,6 +94,12 @@ PROVIDER_KIND_DEFAULTS = {
     # Prefix caching (cache hit 4–10× дешевле miss) — структурируй промпты так, чтобы
     # стабильный префикс шёл первым. V4-Flash в превью с 1M context.
     "deepseek": {"base_url": "https://api.deepseek.com/v1"},
+    # Poolside Laguna — кодинг-модели прямого API (release 2026-05-12). OpenAI-compat.
+    # Laguna M.1: 225B-A23B MoE, SWE-Pro 46.9% / SWE-V 72.5% / Terminal-Bench 2.0 40.7%.
+    # Laguna XS.2: 33B-A3B Apache 2.0, SWE-Pro 44.5% / SWE-V 68.2%.
+    # Free всем на ограниченное время; ключ — platform.poolside.ai → API keys.
+    # Возвращает reasoning_content отдельным полем (thinking on by default).
+    "poolside": {"base_url": "https://inference.poolside.ai/v1"},
     # Alibaba DashScope International (Qwen). OpenAI-compat compatible-mode.
     # Регистрация через Alibaba Cloud International, 1M токенов бесплатно на модель.
     # qwen3.6-plus / qwen3.6-max-preview / qwen3-coder-480b — флагманы 1M-context.
@@ -201,6 +207,7 @@ _ADHOC_DEFAULT_API_KEY_ENV: dict[str, str] = {
     "freetheai": "FREETHEAI_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
     "dashscope": "DASHSCOPE_API_KEY",
+    "poolside": "POOLSIDE_API_KEY",
     # ovhcloud — anonymous, no env key. Excluded from ad-hoc resolution because
     # ad-hoc requires an env var to be set (see build_adhoc_provider). Configure
     # via providers: yaml entry with kind: ovhcloud (no api_key_env).

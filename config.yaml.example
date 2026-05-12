@@ -43,6 +43,32 @@ providers:
   # === latency_s = медиана Total time из LATENCY_TEST_v2_default.md (Hetzner FSN1 → upstream, 2026-04-20, max_tokens=600) ===
   # === ru = RU-Quality 0-100: грамматика + корректность физики + следование инструкции (v2_default/instruct 2026-04-20). Пороги: ≥80 top, ≥60 strong, ≥40 mid, <40 low. ===
 
+  # === DeepSeek direct API (api.deepseek.com) — V4 Preview, релиз 2026-04-24 ===
+  # 5M токенов кредитов на регистрацию, дальше PAYG. quota_limited: true (помечен 💳).
+  # V4-Pro: 1.6T/49B active, SWE-V 80.6%, Codeforces 3206 — frontier coding.
+  # V4-Flash: 284B/13B active, для быстрых ответов. Оба — 1M context.
+  # Цены (со скидкой 75% до 2026-05-31): Pro $0.435/$0.87, Flash $0.14/$0.28 за 1M.
+  - name: deepseek:v4-pro
+    kind: deepseek
+    model: deepseek-v4-pro
+    api_key_env: DEEPSEEK_API_KEY
+    quota_limited: true   # 5M бесплатных токенов pool, дальше PAYG
+    timeout: 240          # reasoning может занимать долго
+    quality: 80           # AA Index v4.0 (frontier-class, SWE-V 80.6% ≈ Opus 4.6)
+    latency_s: 5.0        # estimate — reasoning, прогнать live-probe
+    ru: 85                # estimate (DeepSeek сильна в RU, V3.2 = 85)
+    reasoning: true
+
+  - name: deepseek:v4-flash
+    kind: deepseek
+    model: deepseek-v4-flash
+    api_key_env: DEEPSEEK_API_KEY
+    quota_limited: true   # тот же 5M pool на ключ
+    timeout: 120
+    quality: 50           # estimate — между V3.2 (46) и V4-Pro (80)
+    latency_s: 2.5        # estimate, non-reasoning fast
+    ru: 80                # estimate
+
   - name: sambanova:deepseek-v3.2
     kind: sambanova
     model: DeepSeek-V3.2
@@ -849,6 +875,33 @@ providers:
     quality: 14      # estimate 2026-05-02 (smoke 2026-05-02; Poolside coder)
     latency_s: 2.1
     ru: 65           # estimate 2026-05-02
+
+  # === Poolside direct API (inference.poolside.ai) — public release 2026-05-12 ===
+  # Coding-focused (ex-CTO GitHub Copilot + ex-source{d}). Свободный доступ на
+  # ограниченное время; выделенный бакет, не делит квоту с openrouter:laguna-*:free.
+  # OpenAI-compat; reasoning on by default (поле reasoning_content в response).
+  # Smoke 2026-05-12: оба HTTP 200, reasoning_tokens>0.
+  - name: poolside:laguna-m.1
+    kind: poolside
+    model: poolside/laguna-m.1
+    api_key_env: POOLSIDE_API_KEY
+    rpm: 60          # неопубликован, conservative (no headers; baseten-backed)
+    timeout: 240
+    quality: 50      # estimate — SWE-Pro 46.9% / SWE-V 72.5% / TB2 40.7% (225B-A23B MoE, между Pro/V3.2 и frontier)
+    latency_s: 5.0   # smoke 2026-05-12 (reasoning, 156 r_tok / 271 out)
+    ru: 70           # estimate (extrap из openrouter:laguna-m.1:free = 65)
+    reasoning: true
+
+  - name: poolside:laguna-xs.2
+    kind: poolside
+    model: poolside/laguna-xs.2
+    api_key_env: POOLSIDE_API_KEY
+    rpm: 60          # неопубликован, conservative
+    timeout: 180
+    quality: 38      # estimate — SWE-Pro 44.5% / SWE-V 68.2% / TB2 30.1% (33B-A3B Apache 2.0)
+    latency_s: 4.0   # smoke 2026-05-12 (reasoning, 1032 r_tok при reduce-one-liner)
+    ru: 65           # estimate (mirror openrouter:laguna-xs.2:free = 65)
+    reasoning: true
 
   - name: openrouter:qwen3-coder-free
     kind: openrouter
@@ -1866,6 +1919,7 @@ default_chain: chat
 chains:
   # --- chat: RU-floor + AA tiebreak (deepchain1) ---
   chat:
+    - deepseek:v4-flash                  # 💳 quota · V4-Flash preview, 1M ctx, AA ~50 (estimate), фронтир-цена $0.14/$0.28 за 1M
     - github:gpt-4.1-mini
     - yandex:alice
     - gemini:2.5-flash-lite
@@ -1913,7 +1967,9 @@ chains:
     - openrouter:nemotron-3-nano-omni-r-free  # AA 18, RU 70, 3.1s — reasoning + multimodal
     - openrouter:nemotron-3-nano-30b-free     # AA 18, RU 70, 4.0s — reasoning
     - cohere:command-r7b                 # AA 10, RU 70, 1.0s — tiny 7B
-    - openrouter:laguna-m.1:free         # AA 14, RU 65, 2.1s — Poolside coder, general OK
+    - poolside:laguna-m.1                # ⭐ direct · SWE-Pro 47 / SWE-V 73 · 5s reasoning — Poolside flagship (release 2026-05-12)
+    - poolside:laguna-xs.2               # direct · SWE-Pro 45 / SWE-V 68 · 4s reasoning — open 33B Apache 2.0
+    - openrouter:laguna-m.1:free         # AA 14, RU 65, 2.1s — same model via OR :free (shared bucket)
     - openrouter:gpt-oss-20b-free        # AA 11, RU 65, 1.8s — same model groq:gpt-oss-20b
     - openrouter:gemma-3-4b-free         # AA 7,  RU 65, 2.2s
     - openrouter:gemma-4-26b-free        # AA 22, RU 75, ~3s — NEW Gemma 4 MoE (429-flaky upstream)
@@ -1943,6 +1999,7 @@ chains:
   #   openrouter:gpt-oss-120b-free (5.2s, reasoning), openrouter:free-router (20s).
   # Пороги строгие: ≤5s (sambanova:llama-3.3-70b на границе 5.0s — оставлен).
   chat_fast:
+    - deepseek:v4-flash                  # 💳 quota · V4-Flash ~2.5s, AA ~50, 1M ctx
     - github:gpt-4.1-mini
     - yandex:alice
     - gemini:2.5-flash-lite
@@ -1981,7 +2038,9 @@ chains:
     - openrouter:gemma-4-31b-free        # 1.7s, RU 78, AA 25 — NEW
     - openrouter:gpt-oss-20b-free        # 1.8s, RU 65
     - openrouter:gemma-3-12b-free        # 2.1s, RU 70
-    - openrouter:laguna-m.1:free         # 2.1s, RU 65
+    - poolside:laguna-m.1                # direct · 5s reasoning · dedicated bucket
+    - poolside:laguna-xs.2               # direct · 4s reasoning · dedicated bucket
+    - openrouter:laguna-m.1:free         # 2.1s, RU 65 (shared OR :free bucket)
     - openrouter:gemma-3-4b-free         # 2.2s, RU 65
     - openrouter:gemma-3n-e4b-free       # 1.5s, RU 55
     - openrouter:gemma-3n-e2b-free       # 1.4s, RU 50
@@ -1990,11 +2049,53 @@ chains:
     - openrouter:gemma-4-26b-free        # ~3s, RU 75 — 429-flaky
     # (freetheai:gemini-2.5-flash переехал в начало после circuit-breaker, 2026-05-08)
 
+  # --- chat_strict_json: user-content validation with guaranteed strict JSON ---
+  # Use case: structured validators (text moderation, classification, scoring),
+  # где клиент делает JSON.parse(content) и не имеет strip-fences fallback.
+  # Models filtered on (бенч 2026-05-12 на исламском UGC, n=5 на модель):
+  #   1. Не отказывают на user-generated content (religion, marriage, identity, etc.).
+  #   2. Возвращают чистый JSON без markdown-fences ```json…```.
+  #   3. Median latency ≤ 3s для топ-8.
+  # Порядок: accuracy-first (5/5 на длинном исламском тексте), latency-second.
+  #
+  # Excluded from chat/chat_fast (and why — все обнаружены на бенче 2026-05-12):
+  #   - yandex:alice                    — plaintext refusal "Я не могу..." на ислам/брак
+  #   - gemini:2.5-flash (full)         — цензурит религиозные декларации как policy violation
+  #   - cohere:command-r, command-r7b   — выдумывают "objectionable language" verdicts
+  #   - github:llama-3.3-70b            — flag religious references как invalid
+  #   - groq:llama-3.3-70b              — требует "objective format", invalid на нормальном тексте
+  #   - sambanova:llama-4-maverick      — "Ненадлежащее содержание" на benign UGC
+  #   - sambanova:deepseek-v3.1         — 0/5 "prohibited content: religious reference"
+  #   - gigachat:2-max, gigachat:2-pro  — 0/5: отказывают на длинном тексте под "non-ASCII chars"
+  #     (на коротких фразах работают, на длинных — censorship-режим)
+  #   - openrouter:nemotron-3-nano-30b-free — false-negatives на коротком тексте
+  #   - github:deepseek-v3              — wraps in ```json fences
+  #   - gemini:2.5-flash-lite           — иногда wraps в ```json fences (~30%)
+  #   - openrouter:*-free (gemma-3*, gemma-3n-*, gemma-4-26b, hermes-3, ling-*,
+  #     llama-3.*-free, qwen3-coder, qwen3-next, minimax-m2.5, dolphin-venice)
+  #                                     — upstream 404 "No endpoints found"
+  #   - nvidia:qwen3.5-397b             — 45s timeouts
+  #   - cloudflare:llama-3.3-70b-fp8-fast — latency variance 1.7s → 24s
+  #   - sambanova:deepseek-v3.2         — upstream maintenance (503)
+  chat_strict_json:
+    - groq:gpt-oss-20b                  # 1.0s · 5/5 · best balance speed+accuracy
+    - groq:gpt-oss-120b                 # 1.0s · 5/5 · топ качество
+    - github:gpt-4.1-mini               # 1.7s · 5/5 · стабильный (был дефолт chat_fast)
+    - mistral:large                     # 1.1s · 4/5 · 1 transient parse error
+    - github:gpt-4o-mini                # 2.0s · 5/5
+    - cohere:command-r-plus             # 0.8s median (до 8s tail) · 5/5
+    - zai:glm-4.5-flash                 # 3.1s · 5/5
+    - gemini:flash-latest               # 2.9s · 5/5
+    - groq:llama-4-scout                # 0.6s · 4/5 · fastest, иногда false-neg на длинных RU
+    - openrouter:gpt-oss-120b-free      # 3–14s · hard fallback (free)
+    - freetheai:gemini-2.5-flash        # 17s · last resort (медленный, но не отказывает)
+
   # --- code: reasoning + SWE/LCB composite (deepchain1) ---
   code:
     # --- 2026-05-02: gemini вернулся в топ — пофикшен адаптер ---
     # (FunctionResponse.name теперь подставляется из предыдущего assistant.tool_calls
     #  по tool_call_id — Claude Code через claude-code-router больше не падает 400).
+    - deepseek:v4-pro                 # 💳 quota · SWE-bench V 80.6% (≈ Opus 4.6), Codeforces 3206, 1M ctx — frontier coding
     - nvidia:qwen3-coder-480b         # 2.0s · 480B/35B, 256k ctx, agentic SWE-V ~52%, code-specialized
     - gemini:flash-latest             # 92 · SWE 78, LCB 90.8
     - nvidia:qwen3.5-397b             # 88 · SWE 76.4
@@ -2028,7 +2129,9 @@ chains:
     - github:gpt-4o-mini              # 20
     # --- 2026-05-02 estimates additions ---
     - openrouter:qwen3-coder-free        # code-spec, AA 19, ctx 262k (429-flaky)
-    - openrouter:laguna-m.1:free         # Poolside coder M.1, AA 14
+    - poolside:laguna-m.1                # ⭐ direct · SWE-Pro 47 / SWE-V 73 / TB2 41 · 5s reasoning — Poolside flagship coder
+    - poolside:laguna-xs.2                # direct · SWE-Pro 45 / SWE-V 68 / TB2 30 · 4s reasoning — open 33B Apache 2.0
+    - openrouter:laguna-m.1:free         # Poolside coder M.1, AA 14 (shared OR :free, backup)
     - openrouter:gemma-4-31b-free        # AA 25 general, NEW
     - openrouter:qwen3-next-80b-free     # AA 24 general, ctx 262k (429-flaky)
     - openrouter:hermes-3-405b-free      # AA 22 general (slow, 429-flaky)
@@ -2046,7 +2149,9 @@ chains:
   # Топ-приоритет: code-specialized + agentic-friendly.
   code_fast:
     - nvidia:qwen3-coder-480b         # 2.0s · 480B/35B, 256k ctx, code-spec ⭐
+    - poolside:laguna-xs.2             # 4.0s · 33B-A3B Apache 2.0, SWE-Pro 45 / SWE-V 68 — fast coder
     - gemini:flash-latest             # 3.6s · SWE 78, LCB 90.8 (top quality на коде)
+    - poolside:laguna-m.1              # 5.0s · 225B-A23B MoE, SWE-Pro 47 / SWE-V 73 — Poolside flagship
     - cerebras:qwen-3-235b            # 1.1s · reasoning, AA 30
     - groq:gpt-oss-120b               # 1.3s · reasoning, AA 33
     - sambanova:llama-4-maverick      # 1.6s · 17B/128E
@@ -2108,6 +2213,7 @@ chains:
 
   # --- quality: AA Intelligence Index v4.0 (deepchain1) ---
   quality:
+    - deepseek:v4-pro                 # 💳 quota · AA ~80 (frontier), SWE-V 80.6%, Codeforces 3206, 1M ctx
     - freetheai:gpt-5                 # claims OpenAI gpt-5 (frontier · 5.3s) · 2026-05-08 · circuit-breaker лочит на 60s при 403 daily_checkin
     - gemini:flash-latest             # AA 46 (reasoning)
     - sambanova:deepseek-v3.2         # AA 46 (reasoning)
@@ -2156,7 +2262,9 @@ chains:
     - openrouter:nemotron-3-nano-omni-r-free # AA 18 reasoning + multimodal
     - cohere:command-r                   # AA 18
     - openrouter:llama-3.3-70b-free      # AA 15 (429-flaky)
-    - openrouter:laguna-m.1:free         # AA 14
+    - poolside:laguna-m.1                # direct · SWE-Pro 47 / SWE-V 73 · same family, dedicated bucket
+    - poolside:laguna-xs.2                # direct · SWE-Pro 45 / SWE-V 68 · open 33B
+    - openrouter:laguna-m.1:free         # AA 14 (shared OR :free)
     - openrouter:gemma-3-12b-free        # AA 13
     - openrouter:dolphin-venice-24b:free # AA 12 uncensored (429-flaky)
     - openrouter:gpt-oss-20b-free        # AA 11
@@ -2254,7 +2362,9 @@ chains:
     - openrouter:qwen3-coder-free        # AA 19 (429-flaky)
     - openrouter:nemotron-3-nano-30b-free # AA 18 reasoning
     - openrouter:nemotron-3-nano-omni-r-free # AA 18 reasoning multimodal
-    - openrouter:laguna-m.1:free         # AA 14 Poolside
+    - poolside:laguna-m.1                # direct · SWE-V 73 · reasoning · dedicated bucket
+    - poolside:laguna-xs.2                # direct · SWE-V 68 · open 33B
+    - openrouter:laguna-m.1:free         # AA 14 Poolside (shared OR :free)
     - openrouter:gemma-3-12b-free        # AA 13
     - openrouter:dolphin-venice-24b:free # AA 12 uncensored
     - openrouter:gpt-oss-20b-free        # AA 11
