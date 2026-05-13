@@ -44,15 +44,17 @@ providers:
   # === ru = RU-Quality 0-100: грамматика + корректность физики + следование инструкции (v2_default/instruct 2026-04-20). Пороги: ≥80 top, ≥60 strong, ≥40 mid, <40 low. ===
 
   # === DeepSeek direct API (api.deepseek.com) — V4 Preview, релиз 2026-04-24 ===
-  # 5M токенов кредитов на регистрацию, дальше PAYG. quota_limited: true (помечен 💳).
+  # ⚠️ ПЛАТНЫЙ PAYG. Регистрационного гранта 5M НЕТ (проверено 2026-05-12 на новом аккаунте:
+  # HTTP 402 "Insufficient Balance" сразу). Минимальный top-up $2 на platform.deepseek.com.
   # V4-Pro: 1.6T/49B active, SWE-V 80.6%, Codeforces 3206 — frontier coding.
   # V4-Flash: 284B/13B active, для быстрых ответов. Оба — 1M context.
   # Цены (со скидкой 75% до 2026-05-31): Pro $0.435/$0.87, Flash $0.14/$0.28 за 1M.
+  # Подключены только в chain `paid` — не катаются в chat/code/quality, чтобы не сжечь баланс.
   - name: deepseek:v4-pro
     kind: deepseek
     model: deepseek-v4-pro
     api_key_env: DEEPSEEK_API_KEY
-    quota_limited: true   # 5M бесплатных токенов pool, дальше PAYG
+    quota_limited: true   # 💳 PAYG (как openrouter:claude-opus-4.7)
     timeout: 240          # reasoning может занимать долго
     quality: 80           # AA Index v4.0 (frontier-class, SWE-V 80.6% ≈ Opus 4.6)
     latency_s: 5.0        # estimate — reasoning, прогнать live-probe
@@ -63,7 +65,7 @@ providers:
     kind: deepseek
     model: deepseek-v4-flash
     api_key_env: DEEPSEEK_API_KEY
-    quota_limited: true   # тот же 5M pool на ключ
+    quota_limited: true   # 💳 PAYG, общий баланс с v4-pro
     timeout: 120
     quality: 50           # estimate — между V3.2 (46) и V4-Pro (80)
     latency_s: 2.5        # estimate, non-reasoning fast
@@ -310,6 +312,51 @@ providers:
     latency_s: 17.941
     ru: 65        # bench: 13/20 (auto, 1.32s avg)
 
+  # --- Cloudflare WAI extras (2026-05-13, awesome-free-llm-apis) ---
+  # 10K neurons/day shared bucket — общий с llama-3.3-70b-fp8-fast.
+  - name: cloudflare:llama-4-scout
+    kind: cloudflare
+    model: "@cf/meta/llama-4-scout-17b-16e-instruct"
+    api_key_env: CLOUDFLARE_API_KEY
+    rpd: 300
+    timeout: 180
+    quality: 0
+    latency_s: 0
+    ru: 0
+    vision: true
+
+  - name: cloudflare:qwq-32b
+    kind: cloudflare
+    model: "@cf/qwen/qwq-32b"
+    api_key_env: CLOUDFLARE_API_KEY
+    rpd: 300
+    timeout: 180
+    quality: 0
+    latency_s: 0
+    ru: 0
+    reasoning: true
+
+  - name: cloudflare:deepseek-r1-distill-32b
+    kind: cloudflare
+    model: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b"
+    api_key_env: CLOUDFLARE_API_KEY
+    rpd: 300
+    timeout: 180
+    quality: 0
+    latency_s: 0
+    ru: 0
+    reasoning: true
+
+  - name: cloudflare:mistral-small-3.1-24b
+    kind: cloudflare
+    model: "@cf/mistralai/mistral-small-3.1-24b-instruct"
+    api_key_env: CLOUDFLARE_API_KEY
+    rpd: 300
+    timeout: 120
+    quality: 0
+    latency_s: 0
+    ru: 0
+
   - name: groq:gpt-oss-120b
     kind: groq
     model: openai/gpt-oss-120b
@@ -397,6 +444,31 @@ providers:
     latency_s: 0.668
     ru: 60        # bench: 12/20 (auto, 0.79s avg)
 
+  # Kimi K2 Instruct на Groq LPU — 262K context, очень дешёвая alt для кодинга/long-ctx.
+  # awesome-free-llm-apis 2026-05: 30 RPM, 14,400 RPD (стандартный Groq free).
+  - name: groq:kimi-k2-instruct
+    kind: groq
+    model: kimi-k2-instruct
+    api_key_env: GROQ_API_KEY
+    rpm: 30
+    rpd: 14400
+    quality: 0     # estimate — Moonshot Kimi K2 (общий уровень близок к Mistral Large)
+    latency_s: 0   # estimate — Groq LPU, ожидаемо <2s
+    ru: 0          # estimate — нужен прогон
+
+  # DeepSeek-R1 distill 70B на Groq — reasoning через LPU.
+  - name: groq:deepseek-r1-distill-70b
+    kind: groq
+    model: deepseek-r1-distill-llama-70b
+    api_key_env: GROQ_API_KEY
+    rpm: 30
+    rpd: 14400
+    timeout: 120
+    quality: 0     # estimate — R1 distill 70B
+    latency_s: 0   # estimate
+    ru: 0          # estimate
+    reasoning: true
+
   - name: cerebras:llama3.1-8b
     kind: cerebras
     model: llama3.1-8b
@@ -406,6 +478,18 @@ providers:
     quality: 12
     latency_s: 0.421
     ru: 65        # bench: 13/20 (auto, 0.65s avg)
+
+  # GLM-4.7 на Cerebras LPU. awesome-free-llm-apis 2026-05: 10 RPM, 100 RPD, 1M TPD.
+  # Меньше суточный потолок чем у llama/qwen на Cerebras (100 vs 14400) — расход бережно.
+  - name: cerebras:zai-glm-4.7
+    kind: cerebras
+    model: zai-glm-4.7
+    api_key_env: CEREBRAS_API_KEY
+    rpm: 10
+    rpd: 100
+    quality: 0     # estimate — GLM-4.7-Flash class
+    latency_s: 0   # estimate — Cerebras LPU
+    ru: 0          # estimate
 
   # === OR :free добавлены 2026-04-20 по OR_FREE_SCAN.md ===
   # Прямые qwen3-next-80b/qwen3-coder/gemma-4-31b через OR :free — 100% 429 (upstream дохлый).
@@ -551,6 +635,17 @@ providers:
     quality: 15   # AA Index v4.0 (NAS-pruned 70B equivalent)
     latency_s: 27.105
     ru: 18   # «Рассеивание Рэя» вместо Рэлея, «水япар», утечка иероглифа «几乎» в RU
+
+  # Llama-3.1-Nemotron-Ultra-253B — топ-tier NVIDIA Nemotron, 253B параметров.
+  - name: nvidia:nemotron-ultra-253b
+    kind: nvidia
+    model: nvidia/llama-3.1-nemotron-ultra-253b-v1
+    api_key_env: NVIDIA_API_KEY
+    rpm: 40
+    timeout: 240
+    quality: 0
+    latency_s: 0
+    ru: 0
 
   # openrouter/elephant-alpha — снят с OpenRouter 2026-04-25 (20/20 HTTP 404
   # "Elephant Alpha was a stealth preview..."). Удалён из чейнов code/chat_en/quality/moa.
@@ -941,6 +1036,20 @@ providers:
     ru: 90          # ru_bench 2026-04-29: 18/20 — лучший в наборе
     vision: true    # GPT-4.1 multimodal
 
+  # o4-mini reasoning через GitHub Models. awesome-free-llm-apis 2026-05: 10 RPM, 50 RPD.
+  # 200K context, 100K max_output. Тяжёлый reasoning — timeout щедрый.
+  - name: github:o4-mini
+    kind: github
+    model: openai/o4-mini
+    api_key_env: GITHUB_MODELS_TOKEN
+    rpm: 10
+    rpd: 50
+    timeout: 240
+    quality: 0      # estimate — o4-mini reasoning tier
+    latency_s: 0    # estimate
+    ru: 0           # estimate
+    reasoning: true
+
   # bench 2026-04-29: 5/5 OK, median 13.0s. content стабилен.
   - name: github:grok-3
     kind: github
@@ -1006,6 +1115,18 @@ providers:
     quality: 0      # TODO: AA Index v4.0 lookup
     latency_s: 12.84
     ru: 75          # ru_bench 2026-04-29: 15/20
+
+  # Pixtral Large — Mistral vision flagship (124B). Experiment plan rpm:4.
+  - name: mistral:pixtral-large
+    kind: mistral
+    model: pixtral-large-latest
+    api_key_env: MISTRAL_API_KEY
+    rpm: 4
+    timeout: 120
+    quality: 0
+    latency_s: 0
+    ru: 0
+    vision: true
 
   # bench 2026-04-29: 2/5 OK, очень flaky — 3 раза content пустой, 1× ReadTimeout.
   # Возможно та же проблема reasoning vs content что у grok-3-mini.
@@ -1377,6 +1498,19 @@ providers:
     latency_s: 1.0
     ru: 70           # estimate 2026-05-02
 
+  # Command A — флагман Cohere (111B, 256K context). Trial: 20 RPM, 1000 calls/мес.
+  # awesome-free-llm-apis 2026-05.
+  - name: cohere:command-a
+    kind: cohere_chat
+    model: command-a-03-2025
+    api_key_env: COHERE_API_KEY
+    rpm: 20
+    rpd: 33
+    timeout: 120
+    quality: 0       # estimate — топ-модель Cohere
+    latency_s: 0     # estimate
+    ru: 0            # estimate
+
   - name: cohere:aya-expanse-32b
     kind: cohere
     model: c4ai-aya-expanse-32b
@@ -1407,6 +1541,340 @@ providers:
     rpd: 800
     latency_s: 0.4   # измерено 2026-04-23 на "Привет" ru→en (~400ms round-trip)
     ru: 74   # TM-база (гибрид MT + translation memory) — приличная для популярных пар; не поддерживает source=auto
+
+  # ==================================================================================
+  # Дополнительные free-провайдеры (добавлены 2026-05-13 по awesome-free-llm-apis)
+  # Не подмешаны в основные chains автоматически — добавь вручную туда, где нужно.
+  # Метрики quality/latency/ru = 0 (estimate) — прогнать бенчи перед включением в chain.
+  # ==================================================================================
+
+  # --- OVHcloud AI Endpoints (anonymous, EU) — 2 RPM per-IP per-model, БЕЗ ключа ---
+  # endpoints.ai.cloud.ovh.net. Free anonymous tier работает без регистрации.
+  # Подойдёт как deep fallback / для EU-юзеров. С API-ключом — 400 RPM per Public
+  # Cloud project, PAYG-биллинг + до $200 trial-кредитов на новый аккаунт.
+
+  - name: ovhcloud:llama-3.3-70b
+    kind: ovhcloud
+    model: Meta-Llama-3_3-70B-Instruct
+    # api_key_env не задан → anonymous, провайдер пропускает Authorization header
+    rpm: 2  # anonymous per-IP
+    timeout: 120
+    quality: 0
+    latency_s: 0
+    ru: 0
+
+  - name: ovhcloud:qwen3-32b
+    kind: ovhcloud
+    model: Qwen3-32B
+    rpm: 2
+    timeout: 180
+    quality: 0
+    latency_s: 0
+    ru: 0
+    reasoning: true
+
+  - name: ovhcloud:deepseek-r1-distill-70b
+    kind: ovhcloud
+    model: DeepSeek-R1-Distill-Llama-70B
+    rpm: 2
+    timeout: 180
+    quality: 0
+    latency_s: 0
+    ru: 0
+    reasoning: true
+
+  - name: ovhcloud:qwen2.5-vl-72b
+    kind: ovhcloud
+    model: Qwen2.5-VL-72B-Instruct
+    rpm: 2
+    timeout: 120
+    quality: 0
+    latency_s: 0
+    ru: 0
+    vision: true
+
+  - name: ovhcloud:qwen3-coder-30b
+    kind: ovhcloud
+    model: Qwen3-Coder-30B-A3B-Instruct
+    rpm: 2
+    timeout: 120
+    quality: 0
+    latency_s: 0
+    ru: 0
+
+  # --- HuggingFace Inference Providers Router (router.huggingface.co/v1) ---
+  # Free token = ~$0.10/мес кредитов на shared pool (paid sub-providers).
+  # Модель = "<repo>:<provider>" — Novita / Together / Fireworks / SambaNova и т.д.
+  # Здесь — текстовые LLM (audio через kind: hf_space_audio уже есть выше).
+
+  # ⚠️ Router-id != HF repo id: префикс "Meta-" в Llama-3.1 убран. См. полный список
+  # доступных моделей: GET https://router.huggingface.co/v1/models с Bearer HF_TOKEN.
+  - name: huggingface:llama-3.1-8b
+    kind: huggingface
+    model: meta-llama/Llama-3.1-8B-Instruct
+    api_key_env: HF_TOKEN
+    rpd: 1000      # ~$0.10/мес shared free credits — soft floor
+    timeout: 60
+    quota_limited: true   # общий $0.10/мес pool
+    # smoke 2026-05-13: HTTP 200, RU OK (ответ "Да."), 44 total_tokens на простой prompt.
+    quality: 0
+    latency_s: 0
+    ru: 0
+
+  - name: huggingface:llama-3.3-70b
+    kind: huggingface
+    model: meta-llama/Llama-3.3-70B-Instruct
+    api_key_env: HF_TOKEN
+    rpd: 1000
+    timeout: 120
+    quota_limited: true
+    quality: 0
+    latency_s: 0
+    ru: 0
+
+  - name: huggingface:qwen2.5-7b
+    kind: huggingface
+    model: Qwen/Qwen2.5-7B-Instruct
+    api_key_env: HF_TOKEN
+    rpd: 1000
+    timeout: 60
+    quota_limited: true
+    quality: 0
+    latency_s: 0
+    ru: 0
+
+  - name: huggingface:deepseek-r1-distill-llama-8b
+    kind: huggingface
+    model: deepseek-ai/DeepSeek-R1-Distill-Llama-8B
+    api_key_env: HF_TOKEN
+    rpd: 1000
+    timeout: 120
+    quota_limited: true
+    quality: 0
+    latency_s: 0
+    ru: 0
+    reasoning: true
+
+  # --- SiliconFlow (cloud.siliconflow.cn) — 1000 RPM / 50K TPM на free ---
+  # 14 CNY signup credits, permanent-free модели. Самые щедрые лимиты в списке.
+  # ⚠️ CN-провайдер: латентность из EU/RU может прыгать, real-name verification.
+
+  - name: siliconflow:qwen3-8b
+    kind: siliconflow
+    model: Qwen/Qwen3-8B
+    api_key_env: SILICONFLOW_API_KEY
+    rpm: 1000
+    timeout: 120
+    # smoke 2026-05-13: HTTP 200, RU OK, по дефолту thinking on → 364 reasoning_tokens на простом prompt.
+    # Чтобы экономить бюджет 50K TPM — добавь `extra_body: {enable_thinking: false}` если не нужен reasoning.
+    quality: 0
+    latency_s: 0
+    ru: 0
+    reasoning: true
+
+  - name: siliconflow:glm-4.1v-9b-thinking
+    kind: siliconflow
+    model: THUDM/GLM-4.1V-9B-Thinking
+    api_key_env: SILICONFLOW_API_KEY
+    rpm: 1000
+    timeout: 180
+    quality: 0
+    latency_s: 0
+    ru: 0
+    reasoning: true
+    vision: true
+
+  - name: siliconflow:deepseek-r1-distill-7b
+    kind: siliconflow
+    model: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
+    api_key_env: SILICONFLOW_API_KEY
+    rpm: 1000
+    timeout: 120
+    quality: 0
+    latency_s: 0
+    ru: 0
+    reasoning: true
+
+  - name: siliconflow:deepseek-r1-0528-qwen3-8b
+    kind: siliconflow
+    model: deepseek-ai/DeepSeek-R1-0528-Qwen3-8B
+    api_key_env: SILICONFLOW_API_KEY
+    rpm: 1000
+    timeout: 120
+    quality: 0
+    latency_s: 0
+    ru: 0
+    reasoning: true
+
+  # DeepSeek-OCR — уникальная free OCR-модель (image → text).
+  - name: siliconflow:deepseek-ocr
+    kind: siliconflow
+    model: deepseek-ai/DeepSeek-OCR
+    api_key_env: SILICONFLOW_API_KEY
+    rpm: 1000
+    timeout: 120
+    quality: 0
+    latency_s: 0
+    ru: 0
+    vision: true
+
+  # --- LLM7.io (UK, OpenAI-compat gateway) ---
+  # ⚠️ smoke 2026-05-13: awesome-free-llm-apis README врёт — gpt-4o-mini/gemini/
+  # deepseek/qwen НЕ работают, model field в request silently игнорируется. /v1/models
+  # отдаёт 5 идов, но реально живой ОДИН: codestral-latest. Остальное (gpt-oss-20b,
+  # GLM-4.6V-Flash) тоже роутится на codestral; llama-3.1-8b-turbo и ministral-8b
+  # возвращают пустой content.
+  # НО: 120 RPM с токеном (30 anonymous) на codestral — это 30× выше чем прямой
+  # mistral:codestral на Experiment plan (rpm:4). Отличный overflow для кодинга.
+
+  - name: llm7:codestral
+    kind: llm7
+    model: codestral-latest
+    api_key_env: LLM7_API_KEY   # пустой → anonymous 30 RPM режим
+    rpm: 120   # с токеном; без токена — снизь до 30
+    timeout: 60
+    # quality/latency/ru = 0 → прогнать бенчи. Mistral Codestral сильна в коде, RU средний.
+    quality: 0
+    latency_s: 0
+    ru: 0
+
+  # --- ModelScope API-Inference (modelscope.cn) — 2000 RPD shared ---
+  # ⚠️ Требует Alibaba Cloud International + real-name verification (паспорт).
+  # ≤500 RPD на модель, динамические per-model квоты + concurrency.
+
+  - name: modelscope:qwen3.5-35b
+    kind: modelscope
+    model: Qwen/Qwen3.5-35B-A3B
+    api_key_env: MODELSCOPE_API_KEY
+    rpd: 500   # per-model cap
+    timeout: 120
+    quality: 0
+    latency_s: 0
+    ru: 0
+    vision: true
+
+  - name: modelscope:qwen3.5-27b
+    kind: modelscope
+    model: Qwen/Qwen3.5-27B
+    api_key_env: MODELSCOPE_API_KEY
+    rpd: 500
+    timeout: 120
+    quality: 0
+    latency_s: 0
+    ru: 0
+
+  # --- Kilo Code (kilo.ai) ~200 req/hr на ключ ---
+  # ⚠️ smoke 2026-05-13: из README кодекса awesome-free-llm-apis уже отвалились
+  # minimax-m2.5:free, bytedance dola-seed:free, trinity-large-thinking:free —
+  # все возвращают "free period ended". x-ai/grok-code-fast-1 требует /responses
+  # endpoint (не OpenAI chat-compat). Живые: kilo-auto/free → routing на stepfun
+  # step-3.5-flash:free + nvidia/nemotron-3-super-120b-a12b:free.
+  # ⚠️ nemotron-3-super:free — trial mode, NVIDIA логирует промпты.
+  # Все живые модели — thinking-модели, ответ в reasoning, не в content!
+
+  - name: kilo:auto-free
+    kind: kilo
+    model: kilo-auto/free
+    api_key_env: KILO_API_KEY
+    rpm: 3   # ~200/hr ≈ 3.3/min
+    timeout: 120
+    quality: 0
+    latency_s: 0
+    ru: 0
+    reasoning: true   # routes на step-3.5-flash (thinking)
+
+  - name: kilo:step-3.5-flash
+    kind: kilo
+    model: stepfun/step-3.5-flash:free
+    api_key_env: KILO_API_KEY
+    rpm: 3
+    timeout: 120
+    quality: 0
+    latency_s: 0
+    ru: 0
+    reasoning: true
+
+  - name: kilo:nemotron-3-super
+    kind: kilo
+    model: nvidia/nemotron-3-super-120b-a12b:free
+    api_key_env: KILO_API_KEY
+    rpm: 3
+    timeout: 180
+    quota_limited: true   # ⚠️ trial-only: NVIDIA логирует промпты — не используй для приватных данных
+    quality: 0
+    latency_s: 0
+    ru: 0
+    reasoning: true
+
+  # --- Ollama Cloud (ollama.com) — OpenAI-compat /v1, free-tier ---
+  # Smoke 2026-05-13: из 13 моделей awesome-free-llm-apis только 5 доступны free,
+  # остальные 8 требуют Pro ($20/мес 50×) или Max ($50 250×) — закомменчены ниже.
+  # Полный список доступных моделей: GET https://ollama.com/api/tags (без auth).
+  # Free tier — "light usage" (session/weekly GPU-time cap, без публичных цифр).
+
+  - name: ollama:qwen3-coder-480b
+    kind: ollama
+    model: "qwen3-coder:480b"
+    api_key_env: OLLAMA_API_KEY
+    quota_limited: true
+    timeout: 240
+    quality: 0
+    latency_s: 0
+    ru: 0
+
+  - name: ollama:qwen3-vl-235b
+    kind: ollama
+    model: "qwen3-vl:235b"
+    api_key_env: OLLAMA_API_KEY
+    quota_limited: true
+    timeout: 180
+    quality: 0
+    latency_s: 0
+    ru: 0
+    vision: true
+    reasoning: true   # thinking on by default
+
+  - name: ollama:glm-4.7
+    kind: ollama
+    model: glm-4.7
+    api_key_env: OLLAMA_API_KEY
+    quota_limited: true
+    timeout: 180
+    quality: 0
+    latency_s: 0
+    ru: 0
+    reasoning: true   # thinking on by default
+
+  - name: ollama:devstral-123b
+    kind: ollama
+    model: "devstral-2:123b"
+    api_key_env: OLLAMA_API_KEY
+    quota_limited: true
+    timeout: 240
+    quality: 0
+    latency_s: 0
+    ru: 0
+
+  - name: ollama:minimax-m2.5
+    kind: ollama
+    model: minimax-m2.5
+    api_key_env: OLLAMA_API_KEY
+    quota_limited: true
+    timeout: 180
+    quality: 0
+    latency_s: 0
+    ru: 0
+    reasoning: true   # thinking on by default
+
+  # ⚠️ Pro/Max-only — раскомментируй после ollama.com/upgrade:
+  # - name: ollama:deepseek-v4-pro    # требует Pro
+  # - name: ollama:deepseek-v4-flash  # требует Pro
+  # - name: ollama:kimi-k2-thinking   # требует Pro
+  # - name: ollama:kimi-k2.5          # требует Pro
+  # - name: ollama:kimi-k2-1t         # требует Pro (kimi-k2:1t, 1 триллион params)
+  # - name: ollama:qwen3.5-397b       # требует Pro
+  # - name: ollama:mistral-large-3    # требует Pro (mistral-large-3:675b)
+  # - name: ollama:glm-5.1            # требует Pro
 
   # === Paid-only ===
   # ВАЖНО: используется OPENROUTER_PAID_API_KEY (с $4 credit), НЕ основной OR-ключ
@@ -1918,8 +2386,10 @@ default_chain: chat
 
 chains:
   # --- chat: RU-floor + AA tiebreak (deepchain1) ---
+  # deepseek:v4-flash убран из чейнов 2026-05-12 — аккаунт 0 баланса, 402 ломал
+  # chain (router считает 402 non-retryable). Провайдер остался в `providers:` —
+  # доступен через прямой `model=deepseek:v4-flash` после пополнения.
   chat:
-    - deepseek:v4-flash                  # 💳 quota · V4-Flash preview, 1M ctx, AA ~50 (estimate), фронтир-цена $0.14/$0.28 за 1M
     - github:gpt-4.1-mini
     - yandex:alice
     - gemini:2.5-flash-lite
@@ -1999,7 +2469,7 @@ chains:
   #   openrouter:gpt-oss-120b-free (5.2s, reasoning), openrouter:free-router (20s).
   # Пороги строгие: ≤5s (sambanova:llama-3.3-70b на границе 5.0s — оставлен).
   chat_fast:
-    - deepseek:v4-flash                  # 💳 quota · V4-Flash ~2.5s, AA ~50, 1M ctx
+    # deepseek:v4-flash убран 2026-05-12 — см. комментарий в chain `chat`
     - github:gpt-4.1-mini
     - yandex:alice
     - gemini:2.5-flash-lite
@@ -2095,7 +2565,7 @@ chains:
     # --- 2026-05-02: gemini вернулся в топ — пофикшен адаптер ---
     # (FunctionResponse.name теперь подставляется из предыдущего assistant.tool_calls
     #  по tool_call_id — Claude Code через claude-code-router больше не падает 400).
-    - deepseek:v4-pro                 # 💳 quota · SWE-bench V 80.6% (≈ Opus 4.6), Codeforces 3206, 1M ctx — frontier coding
+    # deepseek:v4-pro убран 2026-05-12 — см. комментарий в chain `chat`
     - nvidia:qwen3-coder-480b         # 2.0s · 480B/35B, 256k ctx, agentic SWE-V ~52%, code-specialized
     - gemini:flash-latest             # 92 · SWE 78, LCB 90.8
     - nvidia:qwen3.5-397b             # 88 · SWE 76.4
@@ -2213,7 +2683,7 @@ chains:
 
   # --- quality: AA Intelligence Index v4.0 (deepchain1) ---
   quality:
-    - deepseek:v4-pro                 # 💳 quota · AA ~80 (frontier), SWE-V 80.6%, Codeforces 3206, 1M ctx
+    # deepseek:v4-pro убран 2026-05-12 — см. комментарий в chain `chat`
     - freetheai:gpt-5                 # claims OpenAI gpt-5 (frontier · 5.3s) · 2026-05-08 · circuit-breaker лочит на 60s при 403 daily_checkin
     - gemini:flash-latest             # AA 46 (reasoning)
     - sambanova:deepseek-v3.2         # AA 46 (reasoning)
@@ -2464,6 +2934,8 @@ chains:
   paid:
     - openrouter:claude-opus-4.7      # Anthropic Claude Opus 4.7 via OpenRouter (платная)
     - openai:gpt-5-mini               # OpenAI gpt-5-mini · $0.25/$2.00 per 1M · $5 аккаунт
+    - deepseek:v4-pro                 # DeepSeek V4-Pro PAYG · $0.435/$0.87 (-75% до 2026-05-31) · SWE-V 80.6%, 1M ctx
+    - deepseek:v4-flash               # DeepSeek V4-Flash PAYG · $0.14/$0.28 (-75% до 2026-05-31) · 1M ctx, fast
 
   # --- audio: Speech-to-Text. Whisper на Groq (быстро, эталон RU) + Gemini multimodal last-resort ---
   # Через /v1/audio/transcriptions (OpenAI-compat multipart). model=audio → цепочка.

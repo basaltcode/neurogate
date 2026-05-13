@@ -108,6 +108,29 @@ PROVIDER_KIND_DEFAULTS = {
     # на модель). 40+ open-моделей в EU. Идеален как deep fallback last-resort.
     # OpenAICompatProvider пропускает Authorization header при пустом api_key.
     "ovhcloud": {"base_url": "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"},
+    # SiliconFlow (cloud.siliconflow.cn) — CN, OpenAI-compat. 14 CNY signup credits +
+    # permanent-free модели (Qwen3-8B, GLM-4.1V, DeepSeek-R1-Distill, DeepSeek-OCR).
+    # Лимиты на free: 1000 RPM / 50K TPM — самые щедрые среди free-провайдеров.
+    "siliconflow": {"base_url": "https://api.siliconflow.cn/v1"},
+    # LLM7.io — UK gateway, OpenAI-compat. Базовый доступ без регистрации (anonymous,
+    # 30 RPM); опциональный токен с token.llm7.io поднимает лимит до 120 RPM. 30+
+    # моделей: gpt-4o-mini, gemini-2.5-flash-lite, deepseek-r1/v3, qwen2.5-coder-32b.
+    "llm7": {"base_url": "https://api.llm7.io/v1"},
+    # Alibaba ModelScope API-Inference (modelscope.cn) — CN, OpenAI-compat.
+    # 2000 RPD общих, ≤500 RPD/модель. Свежие Qwen3.5-35B-A3B / Qwen3.5-27B.
+    # ⚠️ Требует Alibaba Cloud аккаунт + real-name verification.
+    "modelscope": {"base_url": "https://api-inference.modelscope.cn/v1"},
+    # Kilo Code (kilo.ai) — OpenAI-compat gateway. Auto-router `kilo-auto/free`
+    # = minimax-m2.5:free (80%) + step-3.5-flash:free (20%). ~200 req/hr на ключ.
+    # ⚠️ nvidia/nemotron-3-super-120b:free логирует промпты для NVIDIA.
+    "kilo": {"base_url": "https://api.kilo.ai/api/gateway"},
+    # Ollama Cloud (ollama.com) — OpenAI-compat есть, не упомянуто в публичной доке но
+    # GET https://ollama.com/v1/chat/completions возвращает 401 (= endpoint живой).
+    # 39+ моделей включая deepseek-v4-pro, kimi-k2:1t, kimi-k2.5, kimi-k2-thinking,
+    # qwen3.5:397b, mistral-large-3:675b, qwen3-vl:235b, glm-5.1, glm-4.7, glm-4.6.
+    # Лимиты: free tier session/weekly без публичных цифр. Pro $20/мес = 50× больше,
+    # Max $50 = 250×. Получить ключ: ollama.com/settings/keys.
+    "ollama": {"base_url": "https://ollama.com/v1"},
     "groq_whisper": {"base_url": "https://api.groq.com/openai/v1"},
     "pollinations_image": {"base_url": "https://image.pollinations.ai"},
     "gemini_image": {"base_url": None},
@@ -208,6 +231,11 @@ _ADHOC_DEFAULT_API_KEY_ENV: dict[str, str] = {
     "deepseek": "DEEPSEEK_API_KEY",
     "dashscope": "DASHSCOPE_API_KEY",
     "poolside": "POOLSIDE_API_KEY",
+    "siliconflow": "SILICONFLOW_API_KEY",
+    "llm7": "LLM7_API_KEY",
+    "modelscope": "MODELSCOPE_API_KEY",
+    "kilo": "KILO_API_KEY",
+    "ollama": "OLLAMA_API_KEY",
     # ovhcloud — anonymous, no env key. Excluded from ad-hoc resolution because
     # ad-hoc requires an env var to be set (see build_adhoc_provider). Configure
     # via providers: yaml entry with kind: ovhcloud (no api_key_env).
