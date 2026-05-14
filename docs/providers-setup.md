@@ -353,6 +353,72 @@ curl -s http://127.0.0.1:8765/v1/chat/completions \
 
 **На сервере (VPS) ничего настраивать не нужно** — если `claude` не установлен, все три `claude_cli:*` записи и chain `local` пропустятся на старте с понятной записью в логе (`skipping claude_cli:opus : claude binary not found`).
 
+#### Подключить `claude_cli` на VPS (headless, без браузера на сервере)
+
+Если хочешь чтобы `model=local` работал и с прод-сервера тоже (квота подписки тратится одна — общая с ноутом):
+
+**1. Установить Claude Code:**
+
+```bash
+# нужен Node 18+ — на Ubuntu 24.04 обычно уже есть
+npm install -g @anthropic-ai/claude-code
+claude --version   # → 2.x.x
+```
+
+**2. Сгенерировать long-lived OAuth token из подписки** (не интерактивный `/login`, а специальный headless-режим):
+
+```bash
+claude setup-token
+```
+
+CLI откроет URL вида `https://claude.ai/oauth/authorize?…`. Скопируй URL из терминала → открой в браузере **на ноуте** → залогинься в claude.ai → подтверди → CLI на сервере напечатает токен:
+
+```
+✓ Long-lived authentication token created successfully!
+sk-ant-oat01-yA6U85mCJsuJN7...
+
+Use this token by setting: export CLAUDE_CODE_OAUTH_TOKEN=<token>
+```
+
+**Токен показывается ровно один раз** — скопируй сразу. Действует 1 год, можно ротировать тем же `claude setup-token` (старый автоматически инвалидируется).
+
+**3. Положить токен в `/opt/neurogate/.env`** (или куда у тебя `EnvironmentFile=` systemd-юнита):
+
+```bash
+echo "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-…" >> /opt/neurogate/.env
+chmod 600 /opt/neurogate/.env  # на всякий
+```
+
+**4. Подвох под systemd:** если у тебя стоит `ProtectHome=yes` (как в шаблоне `neurogate.service` из docs), `/root/.claude/` будет скрыт от subprocess и `claude -p` молча вернёт пустой stdout. Neurogate поймает `claude_cli:* server error: invalid JSON: b''`. Лечение — переопределить `HOME` на путь внутри `ReadWritePaths`:
+
+```ini
+# В /etc/systemd/system/neurogate.service, в секции [Service]:
+Environment=HOME=/opt/neurogate
+```
+
+И `mkdir -p /opt/neurogate/.claude && chmod 700 /opt/neurogate/.claude` перед рестартом — `claude` будет писать туда session-state.
+
+**5. Перезапустить:**
+
+```bash
+systemctl daemon-reload
+systemctl restart neurogate
+journalctl -u neurogate -n 30 --no-pager | grep -iE "claude_cli|chain local"
+# должно показать: chain local: claude_cli:opus → claude_cli:sonnet → claude_cli:haiku
+```
+
+**6. Smoke с сервера:**
+
+```bash
+TOKEN=$(grep ^NEUROGATE_API_TOKEN= /opt/neurogate/.env | cut -d= -f2)
+curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"model":"local","messages":[{"role":"user","content":"reply with OK"}]}' \
+  http://127.0.0.1:8765/v1/chat/completions | jq .choices[0].message.content
+# → "OK"
+```
+
+**Цена ошибки:** квота подписки одна на всё. Если на проде идёт боевой трафик через `model=local`, он будет конкурировать с твоим локальным Claude Code за тот же лимит (Pro ~$20/мес-эквивалент токенов, Max в 5× больше). Не подключай `local` в дефолтные chains (`chat`/`code`/`quality`) на проде — оставь явный opt-in, как сейчас.
+
 ### OpenAI direct — единоразово $5 ради бесплатной модерации (text + image)
 
 **TL;DR — зачем подключать OpenAI вообще:** ради **бесплатной модерации**. Текстовая (`text-moderation-latest`) и multimodal text+image (`omni-moderation-latest`) у OpenAI **бесплатны навсегда** и качественнее всех альтернатив. Платные модели ($0.05–$10 per 1M токенов) — опционально, если иногда понадобится высокое качество в `paid` chain. **На бесплатные chat / embed / image-gen цепочки OpenAI подключать не нужно** — у Groq / Gemini / Z.ai лимиты щедрее и без депозита.
