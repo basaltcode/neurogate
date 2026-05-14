@@ -27,6 +27,7 @@ neurogate даёт **OpenAI-совместимый API** — POST на `/v1/chat
 - **Перевод через API** — `POST /v1/translate` (или `model: "translation"`). Цепочка идёт через специализированные дешёвые переводчики (LibreTranslate, MyMemory, Yandex Translate, Cohere Aya), к chat-моделям обращается только в фоллбэке.
 - **Веб-поиск через API** — `model: "web"` (Gemini google_search + OpenRouter `:online`). Запросы с актуальными данными.
 - **Reasoning-агенты через API** — встроенные `moa` / `sc` / `debate` / `deep_search`, ничего вручную собирать не надо. Ставишь `model: "moa"` — получаешь ансамбль из 25 моделей; `deep_search` — research-агент с web-search.
+- **Claude через подписку Claude.ai без API-ключа** — если локально стоит Claude Code и оплачена подписка (Pro/Max), neurogate может ходить в Opus/Sonnet/Haiku через локальный `claude -p`. Цепочка `model: "local"` или прямой `model: "claude_cli:opus"`. Расход — из подписочной квоты, отдельный Anthropic-ключ не нужен. На сервере без `claude` бинаря провайдер просто авто-skip. Подробности и ограничения v1 — [docs/providers-setup.md](docs/providers-setup.md) → «Claude CLI».
 
 Включай фантазию — у тебя теперь есть бесплатный OpenAI-совместимый API.
 

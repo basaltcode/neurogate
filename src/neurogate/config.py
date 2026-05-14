@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ import yaml
 
 from neurogate.providers import (
     AIHordeImageProvider,
+    ClaudeCLIProvider,
     CloudflareEmbedProvider,
     CloudflareImageProvider,
     CohereChatProvider,
@@ -45,7 +47,7 @@ from neurogate.providers import (
 #   libretranslate — most public mirrors (fedilab, self-hosted) accept no auth
 #   mymemory — 5000 chars/day anonymous, 50000 с contact email (не ключом)
 #   aihorde — anonymous через apikey="0000000000" (community-distributed inference)
-_NO_API_KEY_KINDS = {"edge_tts", "libretranslate", "mymemory", "aihorde", "hf_space_audio", "ovhcloud"}
+_NO_API_KEY_KINDS = {"edge_tts", "libretranslate", "mymemory", "aihorde", "hf_space_audio", "ovhcloud", "claude_cli"}
 
 # Kinds that don't have a model concept (single-purpose services). `model` поле
 # в yaml для них опциональное — у провайдера свой дефолт или оно не применимо.
@@ -439,6 +441,35 @@ def _build_provider(
             quality=quality,
             latency_s=latency_s,
             ru=ru,
+        )
+
+    if kind == "claude_cli":
+        # Shells out to a locally-installed `claude` binary (Claude Code) in print mode.
+        # Auth via the user's Claude.ai subscription (`claude /login`), not API key.
+        # Skipped on hosts where the binary isn't on PATH (typical VPS) — no error.
+        bin_path = entry.get("bin_path") or os.getenv("NEUROGATE_CLAUDE_CLI_PATH") or "claude"
+        if not shutil.which(bin_path):
+            log.warning(
+                "skipping %s: claude binary not found at %s "
+                "(install Claude Code or set NEUROGATE_CLAUDE_CLI_PATH)",
+                name, bin_path,
+            )
+            if skipped is not None:
+                skipped.append(SkippedProvider(name, kind, "missing_binary", "NEUROGATE_CLAUDE_CLI_PATH"))
+            return None
+        return ClaudeCLIProvider(
+            name=name,
+            model=model or "sonnet",
+            bin_path=bin_path,
+            timeout=float(entry.get("timeout", 180.0)),
+            rpd=rpd,
+            rpm=rpm,
+            context_window=context_window,
+            max_output_tokens=max_output_tokens,
+            quality=quality,
+            latency_s=latency_s,
+            ru=ru,
+            reasoning=reasoning,
         )
 
     if kind == "hf_space_audio":

@@ -305,6 +305,54 @@
 - **Зачем**: единственный способ добавить frontier Claude Sonnet/Opus в цепочку без Bedrock/Databricks
 - **Нюанс**: Anthropic API не OpenAI-compat — нужен отдельный `kind: anthropic`. В neurogate **пока не реализован**.
 
+### Claude CLI — через подписку Claude.ai без API-ключа
+
+Если у тебя уже оплачена подписка **Claude.ai Pro/Max** и установлен **Claude Code**, neurogate может ходить в Opus/Sonnet/Haiku через локальный `claude -p` — никакого Anthropic API-ключа не нужно, расход идёт из подписочной квоты.
+
+**Когда брать:**
+- Локальная разработка: подписка уже оплачена, хочется чтобы и пет-проекты на neurogate ходили через неё.
+- Не нужны streaming / tool calling / vision (v1 ограничение).
+- Готов мириться с ~0.4–1с холодным стартом `claude` процесса на каждый запрос.
+
+**Когда НЕ брать:**
+- Продакшен на VPS — `claude` бинаря обычно нет, провайдер авто-скипнется.
+- High-volume / latency-sensitive — каждый запрос форкает Node-процесс.
+- Нужны streaming / tools / vision — провайдер их не поддерживает (router автоматически отскочит на следующего в chain).
+
+**Setup:**
+
+1. Установи Claude Code — https://docs.claude.com/en/docs/claude-code
+2. Авторизуйся: `claude /login` (откроет браузер, залогинит через claude.ai). Токен сохранится в `~/.claude/` и переживёт ребут.
+3. Smoke test:
+   ```bash
+   claude -p "say hi" --output-format json | jq .result
+   ```
+   Должен вернуть строку с приветствием.
+4. (Опц.) если бинарь не в `PATH` — пропиши абсолютный путь в `NEUROGATE_CLAUDE_CLI_PATH=` в `.env`.
+
+**Использование в neurogate:**
+
+```bash
+# Прямой выбор модели:
+curl -s http://127.0.0.1:8765/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"claude_cli:opus","messages":[{"role":"user","content":"привет"}]}'
+
+# Через chain `local` (opus → sonnet → haiku фоллбэк):
+curl -s http://127.0.0.1:8765/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"local","messages":[{"role":"user","content":"привет"}]}'
+```
+
+**Ограничения v1 (намеренно):**
+- **Text-only**: streaming, tool calling, vision — не поддерживаются. Router пре-флайт перенаправит запросы с `stream:true` / `tools:[...]` / image-content на следующего провайдера в chain.
+- **`temperature` и `max_tokens` игнорируются** — `claude -p` их не принимает. Если тебе важна детерминированность через `temperature=0` — этот провайдер не подойдёт.
+- **Каждый запрос — отдельный subprocess**: ~0.4–1с cold-start (форк Node-процесса), плюс собственно генерация. Не для high-volume.
+- **Квота подписки не видна neurogate** — `rate_tracker` считает локальные RPM/RPD из YAML (по умолчанию 30/500 для Opus), реальный остаток квоты Claude.ai не виден до получения 429.
+- **Multi-turn flattening**: история сообщений сериализуется в `Human:/Assistant:` транскрипт и отправляется как единый prompt. На длинных диалогах качество может проседать сильнее чем при native messages API.
+
+**На сервере (VPS) ничего настраивать не нужно** — если `claude` не установлен, все три `claude_cli:*` записи и chain `local` пропустятся на старте с понятной записью в логе (`skipping claude_cli:opus : claude binary not found`).
+
 ### OpenAI direct — единоразово $5 ради бесплатной модерации (text + image)
 
 **TL;DR — зачем подключать OpenAI вообще:** ради **бесплатной модерации**. Текстовая (`text-moderation-latest`) и multimodal text+image (`omni-moderation-latest`) у OpenAI **бесплатны навсегда** и качественнее всех альтернатив. Платные модели ($0.05–$10 per 1M токенов) — опционально, если иногда понадобится высокое качество в `paid` chain. **На бесплатные chat / embed / image-gen цепочки OpenAI подключать не нужно** — у Groq / Gemini / Z.ai лимиты щедрее и без депозита.

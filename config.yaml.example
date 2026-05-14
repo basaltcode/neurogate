@@ -25,6 +25,7 @@
 #   model: "reasoning_quality" → thinking-модели по AA Index
 #   model: "reasoning_deep" → thinking-модели по глубине thinking
 #   model: "paid"       → единственная платная (Claude Opus через OpenRouter)
+#   model: "local"      → Claude Code CLI через подписку Claude.ai (opus → sonnet → haiku, локально)
 #   model: "web"        → OpenRouter :online провайдеры с веб-поиском (Exa)
 #   model: "translation" → мультиязычные (Qwen 119 langs, Mistral, Gemma 140 langs)
 #   model: "moa"        → Mixture of Agents: параллельные proposers + aggregator
@@ -1901,6 +1902,45 @@ providers:
     # latency_s: бенч не прогонялся для paid
     ru: 90   # multilingual SOTA в линейке gpt-5
 
+  # === Claude CLI (Claude Code в print mode) ===
+  # Шеллит локально установленный `claude` бинарь против подписки Claude.ai (Pro/Max).
+  # API-ключа не требует, расход идёт из подписочной квоты. На сервере без `claude`
+  # (типичный VPS) — авто-skip на старте: в логах увидишь
+  # "skipping claude_cli:* : claude binary not found".
+  # Setup: установи Claude Code → `claude /login`. Подробности — docs/providers-setup.md.
+  # v1 ограничения: text-only, без streaming/tools/vision, temperature/max_tokens
+  # игнорируются. Каждый запрос — отдельный subprocess (~0.4-1s cold start).
+  - name: claude_cli:opus
+    kind: claude_cli
+    model: opus
+    timeout: 240
+    rpm: 30
+    rpd: 500
+    context_window: 200000
+    quality: 95          # AA Index v4.0 estimate — Opus 4.x фронтир
+    latency_s: 8.0       # CLI cold-start ~0.4s + Opus reasoning
+    ru: 92
+  - name: claude_cli:sonnet
+    kind: claude_cli
+    model: sonnet
+    timeout: 180
+    rpm: 50
+    rpd: 1000
+    context_window: 200000
+    quality: 80          # Sonnet 4.x
+    latency_s: 4.0
+    ru: 88
+  - name: claude_cli:haiku
+    kind: claude_cli
+    model: haiku
+    timeout: 90
+    rpm: 60
+    rpd: 1500
+    context_window: 200000
+    quality: 55
+    latency_s: 2.0
+    ru: 75
+
   # === GigaChat (SberDevices) ===
   # PERS scope: бесплатный personal-tier (1M токенов на 30 дней при регистрации).
   # Авторизация двухступенчатая: Basic Authorization key → access_token (TTL 30 мин) → Bearer.
@@ -2936,6 +2976,14 @@ chains:
     - openai:gpt-5-mini               # OpenAI gpt-5-mini · $0.25/$2.00 per 1M · $5 аккаунт
     - deepseek:v4-pro                 # DeepSeek V4-Pro PAYG · $0.435/$0.87 (-75% до 2026-05-31) · SWE-V 80.6%, 1M ctx
     - deepseek:v4-flash               # DeepSeek V4-Flash PAYG · $0.14/$0.28 (-75% до 2026-05-31) · 1M ctx, fast
+
+  # --- local: использует локально установленные CLI (Claude Code через подписку Claude.ai).
+  # Авто-пропускается на хостах без `claude` бинаря (т.е. на типичном VPS просто не
+  # стартует). Явный opt-in: клиент шлёт model=local либо прямое имя (claude_cli:opus / sonnet / haiku).
+  local:
+    - claude_cli:opus                 # Opus через подписку — фронтир, ~8s/запрос
+    - claude_cli:sonnet               # Sonnet — баланс качество/скорость, ~4s
+    - claude_cli:haiku                # Haiku — самый быстрый, ~2s
 
   # --- audio: Speech-to-Text. Whisper на Groq (быстро, эталон RU) + Gemini multimodal last-resort ---
   # Через /v1/audio/transcriptions (OpenAI-compat multipart). model=audio → цепочка.

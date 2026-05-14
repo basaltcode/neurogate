@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import json
 import logging
 import os
@@ -4502,3 +4503,169 @@ class RerankProvider:
             total_tokens=total_tokens,
             raw={"kind": self._kind},
         )
+
+
+def _flatten_messages_to_prompt(
+    messages: list[dict[str, Any]],
+) -> tuple[str | None, str]:
+    """Flatten OpenAI-format messages into (system_prompt, transcript) for `claude -p`.
+
+    System messages are joined with double-newlines and lifted into `system`.
+    Non-system turns become a Human:/Assistant: transcript. Multimodal content
+    arrays keep only text parts (no vision in v1). Transcript always ends on
+    a Human: turn so Claude continues as Assistant — a trailing assistant
+    turn gets a synthetic `Human: (continue)` appended.
+    """
+    sys_chunks: list[str] = []
+    turns: list[str] = []
+    for m in messages:
+        role = m.get("role") or "user"
+        content = m.get("content")
+        if isinstance(content, list):
+            text = "\n".join(
+                p.get("text", "") for p in content
+                if isinstance(p, dict) and p.get("type") == "text"
+            ).strip()
+        elif isinstance(content, str):
+            text = content.strip()
+        else:
+            text = ""
+        if not text:
+            continue
+        if role == "system":
+            sys_chunks.append(text)
+        elif role == "assistant":
+            turns.append(f"Assistant: {text}")
+        else:
+            turns.append(f"Human: {text}")
+    system = "\n\n".join(sys_chunks) if sys_chunks else None
+    if turns and not turns[-1].startswith("Human:"):
+        turns.append("Human: (continue)")
+    return system, "\n\n".join(turns)
+
+
+class ClaudeCLIProvider:
+    """Shells out to a locally-installed `claude` CLI in print mode.
+
+    Uses the user's Claude.ai subscription auth — no Anthropic API key needed.
+    Dev-only: the config layer skips this provider at startup when the binary
+    is not on PATH, so adding it to a chain doesn't break server deployments
+    where Claude Code isn't installed.
+
+    v1 limitations (intentional): text-only, no streaming, no tool calling,
+    no vision. `temperature` and `max_tokens` are silently ignored (the CLI
+    does not expose them). Each request spawns a fresh `claude` subprocess
+    (~0.4-1s cold-start) — not suited for high-volume.
+    """
+
+    supports_tools = False
+    supports_vision = False
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        model: str,
+        bin_path: str = "claude",
+        timeout: float = 180.0,
+        rpd: int | None = None,
+        rpm: int | None = None,
+        context_window: int | None = None,
+        max_output_tokens: int | None = None,
+        quality: int | None = None,
+        latency_s: float | None = None,
+        ru: int | None = None,
+        reasoning: bool = False,
+    ) -> None:
+        self.name = name
+        self._model = model
+        self._bin_path = bin_path
+        self._timeout = timeout
+        self.rpd = rpd
+        self.rpm = rpm
+        self.context_window = context_window
+        self.max_output_tokens = max_output_tokens
+        self.quality = quality
+        self.latency_s = latency_s
+        self.ru = ru
+        self.reasoning = reasoning
+
+    async def chat(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        temperature: float | None,
+        max_tokens: int | None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        request_extras: dict[str, Any] | None = None,
+        web_search: bool = False,
+    ) -> ProviderCallResult:
+        system, transcript = _flatten_messages_to_prompt(messages)
+        argv = [
+            self._bin_path, "-p",
+            "--model", self._model,
+            "--output-format", "json",
+        ]
+        if system:
+            argv += ["--append-system-prompt", system]
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *argv,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError as e:
+            raise RuntimeError(f"{self.name} server error: {e}") from e
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(transcript.encode("utf-8")),
+                timeout=self._timeout,
+            )
+        except asyncio.TimeoutError:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            await proc.wait()
+            raise RuntimeError(f"{self.name} timeout after {self._timeout}s")
+
+        if proc.returncode != 0:
+            err = stderr.decode("utf-8", errors="replace")[:400]
+            if re.search(r"/login|not authenticated|unauthorized|api key", err, re.I):
+                raise RuntimeError(f"{self.name} auth: {err[:200]}")
+            if re.search(r"usage limit|rate.?limit|too many requests|429", err, re.I):
+                raise RuntimeError(f"{self.name} rate limit: {err[:200]}")
+            raise RuntimeError(
+                f"{self.name} server error: rc={proc.returncode}: {err[:200]}"
+            )
+
+        try:
+            data = json.loads(stdout)
+        except json.JSONDecodeError:
+            raise RuntimeError(
+                f"{self.name} server error: invalid JSON: {stdout[:200]!r}"
+            )
+
+        if data.get("is_error"):
+            raise RuntimeError(
+                f"{self.name} server error: {data.get('result') or data.get('subtype') or data}"
+            )
+
+        text = (data.get("result") or "").strip()
+        if not text:
+            raise RuntimeError(f"{self.name} empty response")
+
+        usage = data.get("usage") or {}
+        return ProviderCallResult(
+            text=text,
+            prompt_tokens=int(usage.get("input_tokens") or 0),
+            completion_tokens=int(usage.get("output_tokens") or 0),
+            cached_tokens=int(usage.get("cache_read_input_tokens") or 0),
+            finish_reason="stop",
+        )
+
+    async def chat_stream(self, **_: Any) -> AsyncIterator[bytes]:
+        raise NotImplementedError(f"{self.name} is print-only (no streaming in v1)")
+        yield b""  # pragma: no cover — keeps function as async generator
