@@ -21,6 +21,7 @@ import json
 import logging
 import re
 import time
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -175,6 +176,7 @@ async def _plan(
     trace: list[dict[str, Any]],
     max_subqs: int,
     request_extras: dict[str, Any] | None,
+    exclude: Iterable[str] | None = None,
 ) -> list[str]:
     prompt = (
         f"Пользователь задал исследовательский вопрос. Раздели его на {max_subqs} "
@@ -196,6 +198,7 @@ async def _plan(
         max_tokens=600,
         chain_name=planner_chain,
         request_extras=request_extras,
+        exclude=exclude,
     )
     elapsed_ms = int((time.monotonic() - started) * 1000)
 
@@ -223,6 +226,7 @@ async def _search_one(
     searcher_chain: str,
     request_extras: dict[str, Any] | None,
     timeout_s: float,
+    exclude: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     started = time.monotonic()
     try:
@@ -245,6 +249,7 @@ async def _search_one(
                 max_tokens=1500,
                 chain_name=searcher_chain,
                 request_extras=request_extras,
+                exclude=exclude,
             ),
             timeout=timeout_s,
         )
@@ -285,9 +290,10 @@ async def _parallel_search(
     trace: list[dict[str, Any]],
     request_extras: dict[str, Any] | None,
     timeout_s: float,
+    exclude: Iterable[str] | None = None,
 ) -> list[dict[str, Any]]:
     findings = await asyncio.gather(
-        *(_search_one(router, q, searcher_chain, request_extras, timeout_s) for q in subqs)
+        *(_search_one(router, q, searcher_chain, request_extras, timeout_s, exclude=exclude) for q in subqs)
     )
     for f in findings:
         trace.append({
@@ -393,6 +399,7 @@ async def _synthesize(
     temperature: float | None,
     request_extras: dict[str, Any] | None,
     iteration: int,
+    exclude: Iterable[str] | None = None,
 ) -> tuple[ProviderCallResult, str]:
     messages = _build_synthesis_messages(user_query, findings, sources)
     agg_max_tokens = max(max_tokens or 0, 2500)
@@ -403,6 +410,7 @@ async def _synthesize(
         max_tokens=agg_max_tokens,
         chain_name=synthesizer_chain,
         request_extras=request_extras,
+        exclude=exclude,
     )
     elapsed_ms = int((time.monotonic() - started) * 1000)
     trace.append({
@@ -422,6 +430,7 @@ async def _critique(
     critic_chain: str,
     trace: list[dict[str, Any]],
     request_extras: dict[str, Any] | None,
+    exclude: Iterable[str] | None = None,
 ) -> list[str]:
     """Ask critic to identify gaps in draft. Returns list of additional search queries
     to address the gaps, or [] if draft is complete."""
@@ -444,6 +453,7 @@ async def _critique(
         max_tokens=600,
         chain_name=critic_chain,
         request_extras=request_extras,
+        exclude=exclude,
     )
     elapsed_ms = int((time.monotonic() - started) * 1000)
 
@@ -476,6 +486,7 @@ async def run_deep_search(
     jina_enabled: bool = True,
     jina_timeout_s: float = 15.0,
     jina_max_urls: int = 12,
+    exclude: Iterable[str] | None = None,
 ) -> tuple[ProviderCallResult, str, dict[str, Any]]:
     """Полный pipeline deep_search. Возвращает (result, synthesizer_provider, metadata).
 
@@ -492,6 +503,7 @@ async def run_deep_search(
         router, user_query, planner_chain, trace,
         max_subqs=max_subquestions,
         request_extras=request_extras,
+        exclude=exclude,
     )
 
     # Step 2: Parallel Search
@@ -499,6 +511,7 @@ async def run_deep_search(
         router, subqs, searcher_chain, trace,
         request_extras=request_extras,
         timeout_s=search_timeout_s,
+        exclude=exclude,
     )
 
     # Minimum viable findings check
@@ -524,6 +537,7 @@ async def run_deep_search(
         router, user_query, findings, sources, synthesizer_chain, trace,
         max_tokens=max_tokens, temperature=temperature,
         request_extras=request_extras, iteration=1,
+        exclude=exclude,
     )
     iterations = 1
 
@@ -532,6 +546,7 @@ async def run_deep_search(
         gaps = await _critique(
             router, user_query, draft_result.text or "", critic_chain, trace,
             request_extras=request_extras,
+            exclude=exclude,
         )
         if not gaps:
             break
@@ -540,6 +555,7 @@ async def run_deep_search(
             router, gaps, searcher_chain, trace,
             request_extras=request_extras,
             timeout_s=search_timeout_s,
+            exclude=exclude,
         )
         if jina_enabled:
             await _enrich_with_jina(
@@ -554,6 +570,7 @@ async def run_deep_search(
             router, user_query, findings, sources, synthesizer_chain, trace,
             max_tokens=max_tokens, temperature=temperature,
             request_extras=request_extras, iteration=round_n + 1,
+            exclude=exclude,
         )
         iterations += 1
 

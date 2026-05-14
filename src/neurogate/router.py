@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import logging
 import re
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
 from typing import Any
 
 from neurogate.config import AdhocResolveError, build_adhoc_provider
@@ -35,6 +36,39 @@ _MYMEMORY_RESET_RE = re.compile(
     r"NEXT AVAILABLE IN\s+(\d+)\s+HOURS?\s+(\d+)\s+MINUTES?\s+(\d+)\s+SECONDS?",
     re.IGNORECASE,
 )
+
+
+def _exclude_match(name: str, patterns: Iterable[str]) -> bool:
+    """True if `name` matches any pattern. Patterns containing `*`/`?`/`[`
+    use fnmatch (case-sensitive); plain strings match by exact equality.
+    """
+    for pat in patterns:
+        if not pat:
+            continue
+        if any(ch in pat for ch in "*?["):
+            if fnmatch.fnmatchcase(name, pat):
+                return True
+        elif name == pat:
+            return True
+    return False
+
+
+def _filter_excluded(
+    providers: list[Provider], exclude: Iterable[str] | None
+) -> tuple[list[Provider], list[str]]:
+    """Drop providers whose .name matches any pattern in `exclude`. Returns
+    (kept, excluded_names). `exclude=None` is a no-op.
+    """
+    if not exclude:
+        return providers, []
+    kept: list[Provider] = []
+    excluded: list[str] = []
+    for p in providers:
+        if _exclude_match(p.name, exclude):
+            excluded.append(p.name)
+        else:
+            kept.append(p)
+    return kept, excluded
 
 
 def _parse_rate_limit_cooldown(provider_name: str, error_msg: str) -> int:
@@ -290,8 +324,16 @@ class LLMRouter:
         tool_choice: str | dict[str, Any] | None = None,
         request_extras: dict[str, Any] | None = None,
         chain_name: str | None = None,
+        exclude: Iterable[str] | None = None,
     ) -> tuple[ProviderCallResult, str, str]:
         resolved_name, providers = self.resolve_chain(chain_name)
+        providers, excluded = _filter_excluded(providers, exclude)
+        if excluded:
+            log.info("chain %s: excluded providers %s (?exclude=)", resolved_name, excluded)
+        if not providers:
+            raise RuntimeError(
+                f"chain {resolved_name}: all providers excluded via ?exclude= ({excluded})"
+            )
         # Chain `web` signals every provider to attach its native web-search tool
         # (google_search for Gemini, browser_search for Groq gpt-oss). OR `:online`
         # providers ignore the flag — their model-id suffix handles search server-side.
@@ -381,11 +423,19 @@ class LLMRouter:
         tool_choice: str | dict[str, Any] | None = None,
         request_extras: dict[str, Any] | None = None,
         chain_name: str | None = None,
+        exclude: Iterable[str] | None = None,
     ) -> AsyncIterator[tuple[bytes, str, str]]:
         # Fallback semantics for streaming: once a provider yields its first chunk,
         # we commit to it — mid-stream failures surface as a truncated stream rather
         # than a transparent reconnect. Simpler and matches OpenAI's own behavior.
         resolved_name, providers = self.resolve_chain(chain_name)
+        providers, excluded = _filter_excluded(providers, exclude)
+        if excluded:
+            log.info("chain %s: excluded providers %s (?exclude=)", resolved_name, excluded)
+        if not providers:
+            raise RuntimeError(
+                f"chain {resolved_name}: all providers excluded via ?exclude= ({excluded})"
+            )
         web_search = resolved_name == "web"
         wants_reasoning = self._wants_reasoning(request_extras)
         has_images = self._messages_have_images(messages)
@@ -490,11 +540,19 @@ class LLMRouter:
         response_format: str = "json",
         temperature: float | None = None,
         chain_name: str | None = None,
+        exclude: Iterable[str] | None = None,
     ) -> tuple[AudioTranscribeResult, str, str]:
         """Run audio-transcription fallback chain. Skips providers without
         `supports_audio=True` (they'd raise NotImplementedError). Otherwise the
         retry semantics match `chat()` — rate_limit/server/timeout → next provider."""
         resolved_name, providers = self.resolve_chain(chain_name)
+        providers, excluded = _filter_excluded(providers, exclude)
+        if excluded:
+            log.info("transcribe %s: excluded providers %s (?exclude=)", resolved_name, excluded)
+        if not providers:
+            raise RuntimeError(
+                f"chain {resolved_name}: all providers excluded via ?exclude= ({excluded})"
+            )
         last_exc: BaseException | None = None
         skipped: list[str] = []
 
@@ -574,10 +632,18 @@ class LLMRouter:
         response_format: str = "b64_json",
         extra: dict[str, Any] | None = None,
         chain_name: str | None = None,
+        exclude: Iterable[str] | None = None,
     ) -> tuple[ImageGenerationResult, str, str]:
         """Run image-generation fallback chain. Skips providers without
         `supports_images=True`. Retry semantics match `transcribe()`."""
         resolved_name, providers = self.resolve_chain(chain_name)
+        providers, excluded = _filter_excluded(providers, exclude)
+        if excluded:
+            log.info("generate_images %s: excluded providers %s (?exclude=)", resolved_name, excluded)
+        if not providers:
+            raise RuntimeError(
+                f"chain {resolved_name}: all providers excluded via ?exclude= ({excluded})"
+            )
         last_exc: BaseException | None = None
         skipped: list[str] = []
 
@@ -656,11 +722,19 @@ class LLMRouter:
         response_format: str = "b64_json",
         extra: dict[str, Any] | None = None,
         chain_name: str | None = None,
+        exclude: Iterable[str] | None = None,
     ) -> tuple[ImageGenerationResult, str, str]:
         """Run image-edit fallback chain. Skips providers without
         `supports_image_edit=True` (most image providers are gen-only).
         """
         resolved_name, providers = self.resolve_chain(chain_name)
+        providers, excluded = _filter_excluded(providers, exclude)
+        if excluded:
+            log.info("edit_images %s: excluded providers %s (?exclude=)", resolved_name, excluded)
+        if not providers:
+            raise RuntimeError(
+                f"chain {resolved_name}: all providers excluded via ?exclude= ({excluded})"
+            )
         last_exc: BaseException | None = None
         skipped: list[str] = []
 
@@ -739,11 +813,19 @@ class LLMRouter:
         speed: float = 1.0,
         extra: dict[str, Any] | None = None,
         chain_name: str | None = None,
+        exclude: Iterable[str] | None = None,
     ) -> tuple[AudioSpeechResult, str, str]:
         """Run text-to-speech fallback chain. Skips providers without
         `supports_speech=True`. Retry semantics match `transcribe()` /
         `generate_images()`."""
         resolved_name, providers = self.resolve_chain(chain_name)
+        providers, excluded = _filter_excluded(providers, exclude)
+        if excluded:
+            log.info("generate_speech %s: excluded providers %s (?exclude=)", resolved_name, excluded)
+        if not providers:
+            raise RuntimeError(
+                f"chain {resolved_name}: all providers excluded via ?exclude= ({excluded})"
+            )
         last_exc: BaseException | None = None
         skipped: list[str] = []
 
@@ -819,10 +901,18 @@ class LLMRouter:
         duration_s: float | None = None,
         extra: dict[str, Any] | None = None,
         chain_name: str | None = None,
+        exclude: Iterable[str] | None = None,
     ) -> tuple[AudioGenerationResult, str, str]:
         """Run text-to-audio (SFX/ambient) fallback chain. Skips providers without
         `supports_sfx=True`. Retry semantics match `generate_speech()`."""
         resolved_name, providers = self.resolve_chain(chain_name)
+        providers, excluded = _filter_excluded(providers, exclude)
+        if excluded:
+            log.info("generate_sfx %s: excluded providers %s (?exclude=)", resolved_name, excluded)
+        if not providers:
+            raise RuntimeError(
+                f"chain {resolved_name}: all providers excluded via ?exclude= ({excluded})"
+            )
         last_exc: BaseException | None = None
         skipped: list[str] = []
 
@@ -895,10 +985,18 @@ class LLMRouter:
         input_texts: list[str],
         extra: dict[str, Any] | None = None,
         chain_name: str | None = None,
+        exclude: Iterable[str] | None = None,
     ) -> tuple[EmbeddingResult, str, str]:
         """Run embeddings fallback chain. Skips providers without
         `supports_embed=True`. Retry semantics match `generate_speech()`."""
         resolved_name, providers = self.resolve_chain(chain_name)
+        providers, excluded = _filter_excluded(providers, exclude)
+        if excluded:
+            log.info("embed %s: excluded providers %s (?exclude=)", resolved_name, excluded)
+        if not providers:
+            raise RuntimeError(
+                f"chain {resolved_name}: all providers excluded via ?exclude= ({excluded})"
+            )
         last_exc: BaseException | None = None
         skipped: list[str] = []
 
@@ -973,10 +1071,18 @@ class LLMRouter:
         return_documents: bool = False,
         extra: dict[str, Any] | None = None,
         chain_name: str | None = None,
+        exclude: Iterable[str] | None = None,
     ) -> tuple[RerankResult, str, str]:
         """Run rerank fallback chain. Скипает провайдеров без `supports_rerank=True`.
         Семантика retry/skip — как embed (rate-cap + non-retryable raise)."""
         resolved_name, providers = self.resolve_chain(chain_name)
+        providers, excluded = _filter_excluded(providers, exclude)
+        if excluded:
+            log.info("rerank %s: excluded providers %s (?exclude=)", resolved_name, excluded)
+        if not providers:
+            raise RuntimeError(
+                f"chain {resolved_name}: all providers excluded via ?exclude= ({excluded})"
+            )
         last_exc: BaseException | None = None
         skipped: list[str] = []
 
@@ -1052,6 +1158,7 @@ class LLMRouter:
         target_lang: str,
         source_lang: str = "auto",
         chain_name: str | None = None,
+        exclude: Iterable[str] | None = None,
     ) -> tuple[TranslationResult, str, str]:
         """Run translation fallback chain. Dedicated MT-провайдеры (LibreTranslate,
         MyMemory) используют свой translate(); LLM-провайдеры оборачиваются через
@@ -1061,6 +1168,13 @@ class LLMRouter:
         (MyMemory) скипаются на этом значении → следующий в цепочке.
         """
         resolved_name, providers = self.resolve_chain(chain_name)
+        providers, excluded = _filter_excluded(providers, exclude)
+        if excluded:
+            log.info("translate %s: excluded providers %s (?exclude=)", resolved_name, excluded)
+        if not providers:
+            raise RuntimeError(
+                f"chain {resolved_name}: all providers excluded via ?exclude= ({excluded})"
+            )
 
         if resolved_name == "translate_adaptive":
             ru_involved = source_lang.lower() == "ru" or target_lang.lower() == "ru"
@@ -1139,6 +1253,7 @@ class LLMRouter:
         *,
         input_texts: list[str],
         chain_name: str | None = None,
+        exclude: Iterable[str] | None = None,
     ) -> tuple[ModerationResult, str, str]:
         """Run text-moderation fallback. Скипает провайдеров без
         `supports_moderation_text=True`. Семантика retry/skip — как embed."""
@@ -1147,6 +1262,7 @@ class LLMRouter:
             require_attr="supports_moderation_text",
             label="moderate_text",
             call=lambda provider: provider.moderate_text(input_texts=input_texts),
+            exclude=exclude,
         )
 
     async def moderate_image(
@@ -1155,6 +1271,7 @@ class LLMRouter:
         images: list[str],
         context_text: str | None = None,
         chain_name: str | None = None,
+        exclude: Iterable[str] | None = None,
     ) -> tuple[ModerationResult, str, str]:
         """Run image-moderation fallback. Скипает провайдеров без
         `supports_moderation_image=True` (Mistral text-only / Llama Guard 3-8B
@@ -1166,6 +1283,7 @@ class LLMRouter:
             call=lambda provider: provider.moderate_image(
                 images=images, context_text=context_text
             ),
+            exclude=exclude,
         )
 
     async def _moderate(
@@ -1175,8 +1293,16 @@ class LLMRouter:
         require_attr: str,
         label: str,
         call,
+        exclude: Iterable[str] | None = None,
     ) -> tuple[ModerationResult, str, str]:
         resolved_name, providers = self.resolve_chain(chain_name)
+        providers, excluded = _filter_excluded(providers, exclude)
+        if excluded:
+            log.info("%s %s: excluded providers %s (?exclude=)", label, resolved_name, excluded)
+        if not providers:
+            raise RuntimeError(
+                f"chain {resolved_name}: all providers excluded via ?exclude= ({excluded})"
+            )
         last_exc: BaseException | None = None
         skipped: list[str] = []
 
@@ -1252,6 +1378,7 @@ class LLMRouter:
         aggregator_chain: str = "reasoning_quality",
         proposer_timeout_s: float = 90.0,
         max_proposer_chars: int = 6000,
+        exclude: Iterable[str] | None = None,
     ) -> tuple[ProviderCallResult, str, str, list[dict[str, Any]]]:
         """Mixture-of-Agents: fan out to all providers in `moa_chain` in parallel,
         then synthesize via `aggregator_chain` (which uses router.chat() with fallback).
@@ -1264,6 +1391,16 @@ class LLMRouter:
         if resolved_moa != moa_chain:
             raise RuntimeError(
                 f"moa chain {moa_chain!r} not found (resolved to {resolved_moa!r})"
+            )
+        proposers, excluded_proposers = _filter_excluded(proposers, exclude)
+        if excluded_proposers:
+            log.info(
+                "moa %s: excluded proposers %s (?exclude=)",
+                resolved_moa, excluded_proposers,
+            )
+        if not proposers:
+            raise RuntimeError(
+                f"moa chain {resolved_moa}: all proposers excluded via ?exclude= ({excluded_proposers})"
             )
 
         eligible: list[Provider] = []
@@ -1375,6 +1512,16 @@ class LLMRouter:
         # chain (router.chat с chain_name=p.name даёт ровно один провайдер, без
         # нежелательного fallback на default_chain).
         _, agg_providers = self.resolve_chain(aggregator_chain)
+        agg_providers, excluded_agg = _filter_excluded(agg_providers, exclude)
+        if excluded_agg:
+            log.info(
+                "moa %s aggregator: excluded %s (?exclude=)",
+                aggregator_chain, excluded_agg,
+            )
+        if not agg_providers:
+            raise RuntimeError(
+                f"moa aggregator {aggregator_chain}: all candidates excluded via ?exclude= ({excluded_agg})"
+            )
         last_exc: BaseException | None = None
         for agg_p in agg_providers:
             pre = self._preflight_skip(agg_p, tools=None, min_context=None)
@@ -1401,6 +1548,7 @@ class LLMRouter:
                     tool_choice=None,
                     request_extras=request_extras,
                     chain_name=agg_p.name,
+                    exclude=exclude,
                 )
                 return agg_result, agg_name, resolved_moa, proposals
             except Exception as exc:
@@ -1428,6 +1576,7 @@ class LLMRouter:
         max_subquestions: int = 4,
         max_critic_rounds: int = 1,
         jina_enabled: bool = True,
+        exclude: Iterable[str] | None = None,
     ) -> tuple[ProviderCallResult, str, dict[str, Any]]:
         """Deep Search orchestrator (plan → search → synthesize → critique → iterate).
 
@@ -1453,6 +1602,7 @@ class LLMRouter:
             max_tokens=max_tokens,
             request_extras=request_extras,
             jina_enabled=jina_enabled,
+            exclude=exclude,
         )
 
     async def chat_debate(
@@ -1469,6 +1619,7 @@ class LLMRouter:
         agent_timeout_s: float = 120.0,
         max_agent_chars: int = 4000,
         event_emit: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        exclude: Iterable[str] | None = None,
     ) -> tuple[ProviderCallResult, str, str, list[list[dict[str, Any]]], list[str]]:
         """Multi-Agent Debate (Du et al. 2023, Liang et al. 2023): N разных моделей
         отвечают независимо, затем R-1 раундов inter-agent revision (каждый агент
@@ -1492,6 +1643,16 @@ class LLMRouter:
         if resolved_debate != debate_chain:
             raise RuntimeError(
                 f"debate chain {debate_chain!r} not found (resolved to {resolved_debate!r})"
+            )
+        candidates, excluded_candidates = _filter_excluded(candidates, exclude)
+        if excluded_candidates:
+            log.info(
+                "debate %s: excluded candidates %s (?exclude=)",
+                resolved_debate, excluded_candidates,
+            )
+        if not candidates:
+            raise RuntimeError(
+                f"debate chain {resolved_debate}: all candidates excluded via ?exclude= ({excluded_candidates})"
             )
 
         selected: list[Provider] = []
@@ -1743,6 +1904,16 @@ class LLMRouter:
         # Aggregator-цепочка с self-bias защитой как в MoA: исключаем собственный
         # ответ aggregator-а (если он же был среди агентов) из synthesis prompt.
         _, agg_providers = self.resolve_chain(aggregator_chain)
+        agg_providers, excluded_agg = _filter_excluded(agg_providers, exclude)
+        if excluded_agg:
+            log.info(
+                "debate %s aggregator: excluded %s (?exclude=)",
+                aggregator_chain, excluded_agg,
+            )
+        if not agg_providers:
+            raise RuntimeError(
+                f"debate aggregator {aggregator_chain}: all candidates excluded via ?exclude= ({excluded_agg})"
+            )
         last_exc: BaseException | None = None
         for agg_p in agg_providers:
             pre = self._preflight_skip(agg_p, tools=None, min_context=None)
@@ -1770,6 +1941,7 @@ class LLMRouter:
                     tool_choice=None,
                     request_extras=request_extras,
                     chain_name=agg_p.name,
+                    exclude=exclude,
                 )
                 await _emit({
                     "type": "aggregator_done",
@@ -1807,6 +1979,7 @@ class LLMRouter:
         samples: int = 5,
         sample_timeout_s: float = 90.0,
         max_sample_chars: int = 6000,
+        exclude: Iterable[str] | None = None,
     ) -> tuple[ProviderCallResult, str, str, list[dict[str, Any]], str]:
         """Self-Consistency (Wang et al., 2022): N сэмплов от ОДНОЙ модели + синтез.
 
@@ -1827,6 +2000,13 @@ class LLMRouter:
         if resolved_sc != sc_chain:
             raise RuntimeError(
                 f"sc chain {sc_chain!r} not found (resolved to {resolved_sc!r})"
+            )
+        base_candidates, excluded_sc = _filter_excluded(base_candidates, exclude)
+        if excluded_sc:
+            log.info("sc %s: excluded base candidates %s (?exclude=)", resolved_sc, excluded_sc)
+        if not base_candidates:
+            raise RuntimeError(
+                f"sc chain {resolved_sc}: all base candidates excluded via ?exclude= ({excluded_sc})"
             )
 
         # Находим первого eligible base-провайдера. Fallback на следующих если первый
@@ -1940,6 +2120,13 @@ class LLMRouter:
         # сэмплы базовой модели, и консолидация их — смысл SC. Но всё равно
         # перебираем aggregator-цепочку с fallback на случай отказа первого.
         _, agg_providers = self.resolve_chain(aggregator_chain)
+        agg_providers, excluded_agg = _filter_excluded(agg_providers, exclude)
+        if excluded_agg:
+            log.info("sc %s aggregator: excluded %s (?exclude=)", aggregator_chain, excluded_agg)
+        if not agg_providers:
+            raise RuntimeError(
+                f"sc aggregator {aggregator_chain}: all candidates excluded via ?exclude= ({excluded_agg})"
+            )
         last_exc: BaseException | None = None
         for agg_p in agg_providers:
             pre = self._preflight_skip(agg_p, tools=None, min_context=None)
@@ -1954,6 +2141,7 @@ class LLMRouter:
                     tool_choice=None,
                     request_extras=request_extras,
                     chain_name=agg_p.name,
+                    exclude=exclude,
                 )
                 return agg_result, agg_name, resolved_sc, samples_list, base.name
             except Exception as exc:

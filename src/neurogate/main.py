@@ -253,6 +253,17 @@ def create_app() -> FastAPI:
     def auth_dep(authorization: str | None = Header(default=None)) -> None:
         _authorize(authorization)
 
+    def _parse_exclude(request: Request) -> frozenset[str] | None:
+        """Pull `?exclude=name1,glob*,vendor:model` off the request. Returns a
+        frozenset of patterns (passed verbatim to LLMRouter — `*`/`?`/`[…]` use
+        fnmatch, plain strings match by exact equality). Returns None if not set.
+        """
+        raw = request.query_params.get("exclude")
+        if not raw:
+            return None
+        parts = [p.strip() for p in raw.split(",") if p.strip()]
+        return frozenset(parts) if parts else None
+
     def _pick_chain(model_field: str | None) -> str:
         if not model_field:
             return router.default_chain
@@ -635,6 +646,7 @@ def create_app() -> FastAPI:
         # Forward any non-standard top-level fields (prompt_cache_key, response_format,
         # seed, reasoning_effort, logit_bias, service_tier, …) to OpenAI-compat providers.
         request_extras = _collect_request_extras(req)
+        exclude_models = _parse_exclude(request)
 
         # MoA (Mixture of Agents): parallel fan-out to all proposers, then aggregator-синтез.
         # Stream и tools не поддерживаются в первой итерации — proposals собираются
@@ -661,6 +673,7 @@ def create_app() -> FastAPI:
                         request_extras=request_extras,
                         moa_chain=chain_name,
                         aggregator_chain=aggregator_chain,
+                        exclude=exclude_models,
                     )
                 )
             except Exception as exc:
@@ -778,6 +791,7 @@ def create_app() -> FastAPI:
                         max_subquestions=max_subq,
                         max_critic_rounds=rounds,
                         jina_enabled=jina_enabled,
+                        exclude=exclude_models,
                     )
                 )
             except Exception as exc:
@@ -904,6 +918,7 @@ def create_app() -> FastAPI:
                                 agents=agents_n,
                                 rounds=rounds_n,
                                 event_emit=emit,
+                                exclude=exclude_models,
                             )
                             try:
                                 runner_state["agg_provider"] = ret[1]
@@ -966,6 +981,7 @@ def create_app() -> FastAPI:
                         aggregator_chain=aggregator_chain,
                         agents=agents_n,
                         rounds=rounds_n,
+                        exclude=exclude_models,
                     )
                 )
             except Exception as exc:
@@ -1084,6 +1100,7 @@ def create_app() -> FastAPI:
                         sc_chain=chain_name,
                         aggregator_chain=aggregator_chain,
                         samples=samples_n,
+                        exclude=exclude_models,
                     )
                 )
             except Exception as exc:
@@ -1173,6 +1190,7 @@ def create_app() -> FastAPI:
                         tool_choice=req.tool_choice,
                         request_extras=request_extras,
                         chain_name=chain_name,
+                        exclude=exclude_models,
                     ):
                         used_provider = _p
                         used_chain = _c
@@ -1246,6 +1264,7 @@ def create_app() -> FastAPI:
                 tool_choice=req.tool_choice,
                 request_extras=request_extras,
                 chain_name=chain_name,
+                exclude=exclude_models,
             )
         except Exception as exc:
             log.exception("all providers failed (chain=%s)", chain_name)
@@ -1329,6 +1348,7 @@ def create_app() -> FastAPI:
         mime_type = file.content_type or "application/octet-stream"
         filename = file.filename or "audio"
         chain_name = _pick_chain(model)
+        exclude_models = _parse_exclude(request)
         started = time.monotonic()
         try:
             result, used_name, used_chain = await request.app.state.router.transcribe(
@@ -1340,6 +1360,7 @@ def create_app() -> FastAPI:
                 response_format=response_format,
                 temperature=temperature,
                 chain_name=chain_name,
+                exclude=exclude_models,
             )
         except NotImplementedError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1433,6 +1454,7 @@ def create_app() -> FastAPI:
 
         model_field = body.get("model") or "tts"
         chain_name = _pick_chain(model_field)
+        exclude_models = _parse_exclude(request)
 
         known = {"input", "voice", "response_format", "speed", "model"}
         extra = {k: v for k, v in body.items() if k not in known}
@@ -1446,6 +1468,7 @@ def create_app() -> FastAPI:
                 speed=speed,
                 extra=extra or None,
                 chain_name=chain_name,
+                exclude=exclude_models,
             )
         except NotImplementedError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1530,6 +1553,7 @@ def create_app() -> FastAPI:
 
         model_field = body.get("model") or "sfx"
         chain_name = _pick_chain(model_field)
+        exclude_models = _parse_exclude(request)
 
         known = {"prompt", "duration", "duration_s", "model"}
         extra = {k: v for k, v in body.items() if k not in known}
@@ -1541,6 +1565,7 @@ def create_app() -> FastAPI:
                 duration_s=duration_s,
                 extra=extra or None,
                 chain_name=chain_name,
+                exclude=exclude_models,
             )
         except NotImplementedError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1640,6 +1665,7 @@ def create_app() -> FastAPI:
 
         model_field = body.get("model") or "embed"
         chain_name = _pick_chain(model_field)
+        exclude_models = _parse_exclude(request)
 
         # Pass-through extras (everything outside OpenAI core shape).
         known = {"input", "model", "encoding_format", "user", "dimensions"}
@@ -1655,6 +1681,7 @@ def create_app() -> FastAPI:
                 input_texts=input_texts,
                 extra=extra or None,
                 chain_name=chain_name,
+                exclude=exclude_models,
             )
         except NotImplementedError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1773,6 +1800,7 @@ def create_app() -> FastAPI:
         return_documents = bool(body.get("return_documents", False))
         model_field = body.get("model") or "rerank"
         chain_name = _pick_chain(model_field)
+        exclude_models = _parse_exclude(request)
 
         known = {"query", "documents", "model", "top_n", "top_k", "return_documents"}
         extra: dict[str, Any] = {k: v for k, v in body.items() if k not in known}
@@ -1786,6 +1814,7 @@ def create_app() -> FastAPI:
                 return_documents=return_documents,
                 extra=extra or None,
                 chain_name=chain_name,
+                exclude=exclude_models,
             )
         except NotImplementedError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1879,6 +1908,7 @@ def create_app() -> FastAPI:
         extra = {k: v for k, v in body.items() if k not in known}
 
         chain_name = _pick_chain(model_field)
+        exclude_models = _parse_exclude(request)
         started = time.monotonic()
         try:
             result, used_name, used_chain = await request.app.state.router.generate_images(
@@ -1888,6 +1918,7 @@ def create_app() -> FastAPI:
                 response_format=response_format,
                 extra=extra or None,
                 chain_name=chain_name,
+                exclude=exclude_models,
             )
         except NotImplementedError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1992,6 +2023,7 @@ def create_app() -> FastAPI:
         extra = {k: v for k, v in body.items() if k not in known}
 
         chain_name = _pick_chain(model_field)
+        exclude_models = _parse_exclude(request)
         started = time.monotonic()
         try:
             result, used_name, used_chain = await request.app.state.router.edit_images(
@@ -2002,6 +2034,7 @@ def create_app() -> FastAPI:
                 response_format=response_format,
                 extra=extra or None,
                 chain_name=chain_name,
+                exclude=exclude_models,
             )
         except NotImplementedError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -2087,6 +2120,7 @@ def create_app() -> FastAPI:
 
         model_field = body.get("model") or "translation"
         chain_name = _pick_chain(model_field)
+        exclude_models = _parse_exclude(request)
 
         started = time.monotonic()
         try:
@@ -2095,6 +2129,7 @@ def create_app() -> FastAPI:
                 target_lang=target_lang,
                 source_lang=source_lang,
                 chain_name=chain_name,
+                exclude=exclude_models,
             )
         except NotImplementedError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -2189,12 +2224,14 @@ def create_app() -> FastAPI:
 
         model_field = body.get("model") or "moderation"
         chain_name = _pick_chain(model_field)
+        exclude_models = _parse_exclude(request)
 
         started = time.monotonic()
         try:
             result, used_name, used_chain = await request.app.state.router.moderate_text(
                 input_texts=input_texts,
                 chain_name=chain_name,
+                exclude=exclude_models,
             )
         except NotImplementedError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -2304,6 +2341,7 @@ def create_app() -> FastAPI:
 
         model_field = body.get("model") or "moderation_image"
         chain_name = _pick_chain(model_field)
+        exclude_models = _parse_exclude(request)
 
         started = time.monotonic()
         try:
@@ -2311,6 +2349,7 @@ def create_app() -> FastAPI:
                 images=images,
                 context_text=context_text,
                 chain_name=chain_name,
+                exclude=exclude_models,
             )
         except NotImplementedError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -2372,6 +2411,7 @@ def create_app() -> FastAPI:
         _authorize(authorization)
         openai_args = request_to_openai(req)
         chain_name = _pick_chain(req.model)
+        exclude_models = _parse_exclude(request)
 
         if req.stream:
             async def sse_body():
@@ -2389,6 +2429,7 @@ def create_app() -> FastAPI:
                         tools=openai_args["tools"],
                         tool_choice=openai_args["tool_choice"],
                         chain_name=chain_name,
+                        exclude=exclude_models,
                     ):
                         used_provider = _p
                         used_chain = _c
@@ -2464,6 +2505,7 @@ def create_app() -> FastAPI:
                 tools=openai_args["tools"],
                 tool_choice=openai_args["tool_choice"],
                 chain_name=chain_name,
+                exclude=exclude_models,
             )
         except Exception as exc:
             log.exception("all providers failed on /v1/messages (chain=%s)", chain_name)
