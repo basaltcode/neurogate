@@ -374,6 +374,28 @@ def _tool_call_args_to_dict(raw: Any) -> dict[str, Any]:
     return {"_value": raw}
 
 
+def _gemini_image_part(image_url: Any) -> Any | None:
+    """Convert an OpenAI `image_url` value into a Gemini inline-data image Part.
+
+    Accepts either {"url": "data:image/...;base64,..."} or a bare data-URI string.
+    Returns None for non-data URLs (remote http(s) — Gemini can't inline those here)
+    or malformed input, so the caller can skip silently.
+    """
+    url = image_url.get("url") if isinstance(image_url, dict) else image_url
+    if not isinstance(url, str) or not url.startswith("data:"):
+        return None
+    try:
+        header, b64 = url.split(",", 1)
+        # header looks like "data:image/jpeg;base64"
+        mime = header[len("data:"):].split(";", 1)[0].strip() or "image/jpeg"
+        data = base64.b64decode(b64)
+        if not data:
+            return None
+        return types.Part(inline_data=types.Blob(mime_type=mime, data=data))
+    except Exception:
+        return None
+
+
 def _messages_to_gemini(
     messages: list[dict[str, Any]],
 ) -> tuple[str, list[Any]]:
@@ -461,9 +483,29 @@ def _messages_to_gemini(
                 contents.append(types.Content(role="model", parts=parts))
             continue
 
-        # user / other → role=user with single text Part
-        txt = _text_from_content(m.get("content")) or " "
-        contents.append(types.Content(role="user", parts=[types.Part(text=txt)]))
+        # user / other → role=user. Forward text AND any inline images so the
+        # vision models (gemini-*) actually receive the picture instead of just
+        # the prompt text (was dropping images → models replied "send the photo").
+        content = m.get("content")
+        parts: list[Any] = []
+        if isinstance(content, list):
+            for p in content:
+                if not isinstance(p, dict):
+                    continue
+                if p.get("type") == "text":
+                    t = p.get("text")
+                    if t:
+                        parts.append(types.Part(text=t))
+                elif p.get("type") == "image_url":
+                    img = _gemini_image_part(p.get("image_url"))
+                    if img is not None:
+                        parts.append(img)
+        elif isinstance(content, str):
+            if content.strip():
+                parts.append(types.Part(text=content))
+        if not parts:
+            parts.append(types.Part(text=" "))
+        contents.append(types.Content(role="user", parts=parts))
 
     return "\n\n".join(system_parts), contents
 
