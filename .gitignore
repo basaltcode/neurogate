@@ -5,6 +5,7 @@ __pycache__/
 config.yaml
 deploy.md
 warnind.md
+SECURITY_AUDIT.md
 *.egg-info/
 dist/
 build/

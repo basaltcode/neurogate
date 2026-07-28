@@ -1019,7 +1019,9 @@ class OpenAICompatProvider:
                 f"{self._base_url}/chat/completions", headers=headers, json=payload
             )
             if resp.status_code >= 400:
-                raise RuntimeError(f"{self.name} HTTP {resp.status_code}: {resp.text[:400]}")
+                retry_after = resp.headers.get("retry-after")
+                suffix = f" [Retry-After:{retry_after}]" if retry_after else ""
+                raise RuntimeError(f"{self.name} HTTP {resp.status_code}: {resp.text[:400]}{suffix}")
             data = resp.json()
 
         if isinstance(data, dict) and data.get("error"):
@@ -1119,8 +1121,10 @@ class OpenAICompatProvider:
             ) as resp:
                 if resp.status_code >= 400:
                     body = await resp.aread()
+                    retry_after = resp.headers.get("retry-after")
+                    suffix = f" [Retry-After:{retry_after}]" if retry_after else ""
                     raise RuntimeError(
-                        f"{self.name} HTTP {resp.status_code}: {body.decode(errors='replace')[:400]}"
+                        f"{self.name} HTTP {resp.status_code}: {body.decode(errors='replace')[:400]}{suffix}"
                     )
                 got_any = False
                 async for raw in resp.aiter_bytes():
@@ -1364,8 +1368,10 @@ class GigaChatProvider:
             ) as resp:
                 if resp.status_code >= 400:
                     body = await resp.aread()
+                    retry_after = resp.headers.get("retry-after")
+                    suffix = f" [Retry-After:{retry_after}]" if retry_after else ""
                     raise RuntimeError(
-                        f"{self.name} HTTP {resp.status_code}: {body.decode(errors='replace')[:400]}"
+                        f"{self.name} HTTP {resp.status_code}: {body.decode(errors='replace')[:400]}{suffix}"
                     )
                 got_any = False
                 async for raw in resp.aiter_bytes():
@@ -3246,147 +3252,6 @@ class CohereTranslateProvider:
             provider_model=f"cohere:{self._model}",
             raw=j,
         )
-
-
-class CohereChatProvider:
-    """Cohere v2 /chat для Command-R / R+ / R7B (general chat, не translate).
-
-    Endpoint POST {base_url}/chat. Request body совместим с OpenAI-style
-    messages, но response shape собственный: {message: {content: [{type:'text', text:...}]}}.
-
-    Trial tier (2026-04): 20 RPM на модель, 1000 calls/мес. Документация Cohere
-    не уточняет shared/per-model для месячного квотума — на каждой записи
-    rpd=33 как safe-floor (1000/30).
-
-    Streaming эмулируется: один OpenAI-compat SSE chunk из полного ответа
-    (Cohere v2 SSE имеет свой формат — дешевле fake-stream, чем переводить).
-    """
-
-    supports_tools = False
-    supports_audio = False
-    supports_images = False
-    supports_speech = False
-    supports_translation = False
-    context_window = None
-    reasoning = False
-
-    def __init__(
-        self,
-        name: str,
-        *,
-        api_key: str,
-        model: str,
-        base_url: str = "https://api.cohere.com/v2",
-        timeout: float = 60.0,
-        rpd: int | None = None,
-        rpm: int | None = None,
-        quality: int | None = None,
-        latency_s: float | None = None,
-        ru: int | None = None,
-    ) -> None:
-        self.name = name
-        self._api_key = api_key
-        self._model = model
-        self._base_url = base_url.rstrip("/")
-        self._timeout = timeout
-        self.rpd = rpd
-        self.rpm = rpm
-        self.quality = quality
-        self.latency_s = latency_s
-        self.ru = ru
-
-    def _build_payload(
-        self,
-        messages: list[dict[str, Any]],
-        temperature: float | None,
-        max_tokens: int | None,
-    ) -> dict[str, Any]:
-        body: dict[str, Any] = {"model": self._model, "messages": messages}
-        if temperature is not None:
-            body["temperature"] = temperature
-        if max_tokens is not None:
-            body["max_tokens"] = max_tokens
-        return body
-
-    async def chat(
-        self,
-        *,
-        messages: list[dict[str, Any]],
-        temperature: float | None,
-        max_tokens: int | None,
-        tools: list[dict[str, Any]] | None = None,
-        tool_choice: str | dict[str, Any] | None = None,
-        request_extras: dict[str, Any] | None = None,
-        web_search: bool = False,
-    ) -> ProviderCallResult:
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "Content-Type": "application/json",
-        }
-        body = self._build_payload(messages, temperature, max_tokens)
-        async with httpx.AsyncClient(timeout=httpx.Timeout(self._timeout)) as client:
-            resp = await client.post(f"{self._base_url}/chat", headers=headers, json=body)
-        if resp.status_code >= 400:
-            raise RuntimeError(f"{self.name} HTTP {resp.status_code}: {resp.text[:400]}")
-        data = resp.json()
-        msg = data.get("message") or {}
-        blocks = msg.get("content") or []
-        if not isinstance(blocks, list):
-            raise RuntimeError(f"{self.name} unexpected content shape: {str(data)[:200]}")
-        text = "".join(
-            b.get("text", "") for b in blocks
-            if isinstance(b, dict) and b.get("type") == "text"
-        ).strip()
-        if not text:
-            raise RuntimeError(f"{self.name} empty response: {str(data)[:200]}")
-        usage = (data.get("usage") or {}).get("tokens") or {}
-        return ProviderCallResult(
-            text=text,
-            prompt_tokens=int(usage.get("input_tokens", 0) or 0),
-            completion_tokens=int(usage.get("output_tokens", 0) or 0),
-            finish_reason=data.get("finish_reason") or "stop",
-        )
-
-    async def chat_stream(
-        self,
-        *,
-        messages: list[dict[str, Any]],
-        temperature: float | None,
-        max_tokens: int | None,
-        tools: list[dict[str, Any]] | None = None,
-        tool_choice: str | dict[str, Any] | None = None,
-        request_extras: dict[str, Any] | None = None,
-        web_search: bool = False,
-    ) -> AsyncIterator[bytes]:
-        result = await self.chat(
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        chunk = {
-            "id": f"cohere-{uuid.uuid4().hex[:12]}",
-            "object": "chat.completion.chunk",
-            "model": self._model,
-            "choices": [{
-                "index": 0,
-                "delta": {"role": "assistant", "content": result.text},
-                "finish_reason": None,
-            }],
-        }
-        done = {
-            "id": chunk["id"],
-            "object": "chat.completion.chunk",
-            "model": self._model,
-            "choices": [{"index": 0, "delta": {}, "finish_reason": result.finish_reason}],
-            "usage": {
-                "prompt_tokens": result.prompt_tokens,
-                "completion_tokens": result.completion_tokens,
-                "total_tokens": result.prompt_tokens + result.completion_tokens,
-            },
-        }
-        yield f"data: {json.dumps(chunk)}\n\n".encode()
-        yield f"data: {json.dumps(done)}\n\n".encode()
-        yield b"data: [DONE]\n\n"
 
 
 def _parse_size(size: str | None) -> tuple[int, int]:

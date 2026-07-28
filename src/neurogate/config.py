@@ -15,7 +15,6 @@ from neurogate.providers import (
     ClaudeCLIProvider,
     CloudflareEmbedProvider,
     CloudflareImageProvider,
-    CohereChatProvider,
     CohereEmbedProvider,
     CohereTranslateProvider,
     EdgeTTSProvider,
@@ -47,7 +46,7 @@ from neurogate.providers import (
 #   libretranslate — most public mirrors (fedilab, self-hosted) accept no auth
 #   mymemory — 5000 chars/day anonymous, 50000 с contact email (не ключом)
 #   aihorde — anonymous через apikey="0000000000" (community-distributed inference)
-_NO_API_KEY_KINDS = {"edge_tts", "libretranslate", "mymemory", "aihorde", "hf_space_audio", "ovhcloud", "claude_cli"}
+_NO_API_KEY_KINDS = {"edge_tts", "libretranslate", "mymemory", "aihorde", "hf_space_audio", "ovhcloud", "claude_cli", "opencode"}
 
 # Kinds that don't have a model concept (single-purpose services). `model` поле
 # в yaml для них опциональное — у провайдера свой дефолт или оно не применимо.
@@ -110,6 +109,22 @@ PROVIDER_KIND_DEFAULTS = {
     # на модель). 40+ open-моделей в EU. Идеален как deep fallback last-resort.
     # OpenAICompatProvider пропускает Authorization header при пустом api_key.
     "ovhcloud": {"base_url": "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"},
+    # OpenCode Zen (opencode.ai) — OpenAI-compat шлюз, БЕЗ КЛЮЧА И БЕЗ РЕГИСТРАЦИИ
+    # (проверено 2026-07-27: анонимный POST /chat/completions отдаёт 200).
+    # Платный каталог (claude-*, gpt-5.*, glm-5.2, kimi-k2.7) требует ключ, а модели
+    # с суффиксом -free доступны анонимно: deepseek-v4-flash-free, nemotron-3-ultra-free,
+    # ling-3.0-flash-free, north-mini-code-free, laguna-s-2.1-free. Все дали чистый RU.
+    # ⚠️ Free-модели: «Free models may use data for improvement» — не слать чувствительное.
+    # ⚠️ Лимиты не опубликованы; laguna-s-2.1-free уже отдавала provider_rate_limit_exceeded.
+    "opencode": {"base_url": "https://opencode.ai/zen/v1"},
+    # Vercel AI Gateway — OpenAI-compat, ключ с vercel.com/<team>/~/ai-gateway/api-keys
+    # в AI_GATEWAY_API_KEY. Каталог 307 моделей, но БЕСПЛАТНЫ РОВНО ДВЕ (pricing 0/0):
+    # inclusionai/ling-3.0-flash-free и poolside/laguna-s-2.1-free. Остальное — PAYG.
+    # Ценность узкая: это ровно те две модели, что чаще всего отдают 429 на opencode/OR,
+    # так что Vercel идёт к ним запасным бакетом, а не как самостоятельный источник.
+    # ⚠️ Покупка кредитов ПЕРЕВОДИТ аккаунт на платный тариф и месячный free-кредит
+    #    перестаёт начисляться — не пополнять баланс, если нужен именно free.
+    "vercel": {"base_url": "https://ai-gateway.vercel.sh/v1"},
     # SiliconFlow (cloud.siliconflow.cn) — CN, OpenAI-compat. 14 CNY signup credits +
     # permanent-free модели (Qwen3-8B, GLM-4.1V, DeepSeek-R1-Distill, DeepSeek-OCR).
     # Лимиты на free: 1000 RPM / 50K TPM — самые щедрые среди free-провайдеров.
@@ -151,7 +166,9 @@ PROVIDER_KIND_DEFAULTS = {
     "libretranslate": {"base_url": "https://translate.fedilab.app"},
     "mymemory": {"base_url": "https://api.mymemory.translated.net"},
     "cohere": {"base_url": "https://api.cohere.com/v2"},
-    "cohere_chat": {"base_url": "https://api.cohere.com/v2"},
+    # cohere_chat — OpenAI-compat shim. Cohere принимает обычный /chat/completions
+    # на /compatibility/v1, поэтому отдельный класс не нужен — общий OpenAICompatProvider.
+    "cohere_chat": {"base_url": "https://api.cohere.com/compatibility/v1"},
     "yandex_translate": {"base_url": "https://translate.api.cloud.yandex.net"},
     # Embeddings: OpenAI-compat, разные base_url. Cohere/Gemini/Cloudflare —
     # отдельные классы (свой шейп).
@@ -238,6 +255,7 @@ _ADHOC_DEFAULT_API_KEY_ENV: dict[str, str] = {
     "modelscope": "MODELSCOPE_API_KEY",
     "kilo": "KILO_API_KEY",
     "ollama": "OLLAMA_API_KEY",
+    "vercel": "AI_GATEWAY_API_KEY",
     # ovhcloud — anonymous, no env key. Excluded from ad-hoc resolution because
     # ad-hoc requires an env var to be set (see build_adhoc_provider). Configure
     # via providers: yaml entry with kind: ovhcloud (no api_key_env).
@@ -523,20 +541,6 @@ def _build_provider(
             folder_id=folder_id,
             base_url=base_url or "https://translate.api.cloud.yandex.net",
             timeout=float(entry.get("timeout", 30.0)),
-            rpd=rpd,
-            rpm=rpm,
-            quality=quality,
-            latency_s=latency_s,
-            ru=ru,
-        )
-
-    if kind == "cohere_chat":
-        return CohereChatProvider(
-            name=name,
-            api_key=api_key,
-            model=model or "command-r-08-2024",
-            base_url=base_url or "https://api.cohere.com/v2",
-            timeout=float(entry.get("timeout", 60.0)),
             rpd=rpd,
             rpm=rpm,
             quality=quality,

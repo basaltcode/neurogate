@@ -37,6 +37,11 @@ _MYMEMORY_RESET_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Standard HTTP `Retry-After` header — propagated by OpenAICompatProvider as
+# `[Retry-After:N]` suffix in the RuntimeError message. Integer seconds only;
+# HTTP-date form is rare in practice for LLM APIs.
+_RETRY_AFTER_RE = re.compile(r"\[Retry-After:(\d+)\]")
+
 
 def _exclude_match(name: str, patterns: Iterable[str]) -> bool:
     """True if `name` matches any pattern. Patterns containing `*`/`?`/`[`
@@ -74,11 +79,13 @@ def _filter_excluded(
 def _parse_rate_limit_cooldown(provider_name: str, error_msg: str) -> int:
     """Cooldown duration in seconds for a rate-limited provider.
 
-    If the upstream tells us when the window resets (mymemory embeds it in the
-    body), use that. Otherwise fall back to a short default — long enough to
-    stop the chain hammering the same 429-ing provider on every retry, short
-    enough that a transient minute-rate spike clears on its own.
+    Preference order: standard `Retry-After` header (Cerebras, Groq, OpenAI all
+    send it on 429) → provider-specific body parsers → safe default. The header
+    path means we wait exactly as long as the upstream asked, no more.
     """
+    m = _RETRY_AFTER_RE.search(error_msg)
+    if m:
+        return int(m.group(1)) + 2  # +2s clock-skew margin
     if provider_name.startswith("mymemory"):
         m = _MYMEMORY_RESET_RE.search(error_msg)
         if m:
@@ -1232,6 +1239,24 @@ class LLMRouter:
                 continue
 
             elapsed = time.monotonic() - started
+
+            # Output-side validation: dedicated MT (Yandex/LibreTranslate/MyMemory)
+            # охотно отдают HTTP 200 на нераспознанные диалекты (Darija/Arabizi/etc.),
+            # возвращая транслитерацию, no-op или зацикливание. Если детектор сработал —
+            # считаем софт-провалом и едем дальше по цепочке (в т.ч. в LLM-хвост).
+            bad_reason = _is_bad_mt_output(result.text, text, target_lang)
+            if bad_reason:
+                requests_total.labels(provider=provider.name, outcome="bad_output").inc()
+                request_duration_seconds.labels(
+                    provider=provider.name, outcome="bad_output"
+                ).observe(elapsed)
+                log.warning(
+                    "translate: %s bad output (%s) — falling through: %r",
+                    provider.name, bad_reason, result.text[:80],
+                )
+                last_exc = RuntimeError(f"{provider.name} bad output: {bad_reason}")
+                continue
+
             requests_total.labels(
                 provider=provider.name, outcome=ErrorCategory.SUCCESS.value
             ).inc()
@@ -2168,6 +2193,63 @@ _LANG_NAMES = {
     "da": "Danish", "no": "Norwegian", "ro": "Romanian", "hu": "Hungarian",
     "bg": "Bulgarian", "auto": "auto-detect source language",
 }
+
+
+_MT_REPETITION_RE = re.compile(r"(.{5,}?)\1{3,}", re.DOTALL)
+
+# Языки в нелатинских письменностях — если target такой, а вывод >50% латиницы,
+# это явный признак, что переводчик не справился со скриптом источника.
+_NON_LATIN_TARGETS = frozenset({
+    "ru", "uk", "bg", "be", "sr", "mk", "kk", "ky", "mn", "tt",
+    "ar", "he", "fa", "ur", "ps",
+    "ja", "zh", "ko", "th",
+    "hi", "bn", "ta", "te", "ml", "kn", "gu", "pa", "mr",
+    "el", "ka", "am", "hy",
+})
+
+
+def _is_bad_mt_output(translated: str, original: str, target_lang: str) -> str | None:
+    """Heuristic check: did the translator actually translate, or pass garbage through?
+    Returns a short reason string if output looks bad, None if it's plausible.
+
+    Cases this catches (см. Darija-тест 2026-05-21 — Yandex 200-OK на всех 5 фразах,
+    но выход — мусор):
+      - verbatim no-op: input==output
+      - hallucination loop: "я люблю тебя, я люблю тебя, я люблю тебя, ..."
+      - Arabizi-residue: цифры внутри слова в выводе ("9хва", "wa9t")
+      - script mismatch: target=ru, а ответ — latin-only.
+
+    Не пытается оценить *качество* перевода (это работа критика/LLM-judge'а) —
+    только ловит явные провалы, где провайдер вернул 200 на нераспознанный диалект.
+    """
+    if not translated:
+        return "empty"
+    out = translated.strip()
+    src = original.strip()
+
+    if out == src or out.lower().rstrip(".!?…") == src.lower().rstrip(".!?…"):
+        return "noop_identical"
+
+    if _MT_REPETITION_RE.search(out):
+        return "repetition_loop"
+
+    # Любой токен в выводе, смешивающий цифры и буквы (без пробела между ними) —
+    # near-perfect signal, что Arabizi-цифра прошла «как есть». False-positives
+    # возможны на product-кодах ("iPhone15", "GPT-4") — принимаем: они редки в
+    # реальных переводах прозы, slow LLM-path для них — приемлемая цена.
+    for token in out.split():
+        core = "".join(c for c in token if c.isalnum())
+        if core and any(c.isdigit() for c in core) and any(c.isalpha() for c in core):
+            return "arabizi_residue"
+
+    if target_lang.lower() in _NON_LATIN_TARGETS:
+        letters = [c for c in out if c.isalpha()]
+        if len(letters) >= 8:
+            latin_count = sum(1 for c in letters if "a" <= c.lower() <= "z")
+            if latin_count / len(letters) > 0.5:
+                return "non_latin_target_latin_output"
+
+    return None
 
 
 async def _translate_via_chat(
