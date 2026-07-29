@@ -953,6 +953,7 @@ def _build_provider(
         rpm=rpm,
         context_window=context_window,
         max_output_tokens=max_output_tokens,
+        max_tokens_param=str(entry.get("max_tokens_param", "max_tokens")),
         quality=quality,
         latency_s=latency_s,
         ru=ru,

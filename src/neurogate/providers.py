@@ -870,6 +870,7 @@ class OpenAICompatProvider:
         rpm: int | None = None,
         context_window: int | None = None,
         max_output_tokens: int | None = None,
+        max_tokens_param: str = "max_tokens",
         quality: int | None = None,
         latency_s: float | None = None,
         ru: int | None = None,
@@ -883,6 +884,10 @@ class OpenAICompatProvider:
         self._model = model
         self._extra_headers = extra_headers or {}
         self._extra_body = extra_body or {}
+        # Output-cap parameter name. OpenAI's reasoning-era models (gpt-5*, o*) reject
+        # `max_tokens` with HTTP 400 and require `max_completion_tokens` instead; set
+        # `max_tokens_param: max_completion_tokens` on those entries in config.
+        self._max_tokens_param = max_tokens_param
         self._auth_scheme = auth_scheme
         self._timeout = timeout
         self.rpd = rpd
@@ -1003,7 +1008,7 @@ class OpenAICompatProvider:
         if max_tokens is not None:
             if self._max_output_tokens is not None:
                 max_tokens = min(max_tokens, self._max_output_tokens)
-            payload["max_tokens"] = max_tokens
+            payload[self._max_tokens_param] = max_tokens
         effective_tools = list(tools) if tools else []
         if web_search:
             wt = self._web_search_tool()
@@ -1101,7 +1106,7 @@ class OpenAICompatProvider:
         if max_tokens is not None:
             if self._max_output_tokens is not None:
                 max_tokens = min(max_tokens, self._max_output_tokens)
-            payload["max_tokens"] = max_tokens
+            payload[self._max_tokens_param] = max_tokens
         effective_tools = list(tools) if tools else []
         if web_search:
             wt = self._web_search_tool()
