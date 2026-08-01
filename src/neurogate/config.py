@@ -90,6 +90,13 @@ PROVIDER_KIND_DEFAULTS = {
     "gigachat_image": {"base_url": "https://gigachat.devices.sberbank.ru/api/v1"},
     "yandex_foundation": {"base_url": "https://llm.api.cloud.yandex.net/v1"},
     "mistral": {"base_url": "https://api.mistral.ai/v1"},
+    # Mistral Codestral — ОТДЕЛЬНЫЙ хост со своей квотой. Принимает тот же
+    # MISTRAL_API_KEY (проверено 2026-08-01: HTTP 200, 0.4s, корректный RU).
+    # Смысл записи именно в квоте: у api.mistral.ai один общий бакет 50 RPM / 25K TPM
+    # на ключ, поэтому лишние mistral:* записи ёмкости не добавляют — а этот хост даёт
+    # свой бакет. Лимиты 30 RPM / 2000 RPD взяты из awesome-free-llm-apis, вендорские
+    # доки free-статус НЕ подтверждают.
+    "codestral": {"base_url": "https://codestral.mistral.ai/v1"},
     # DeepSeek direct API. OpenAI-compat. 5M токенов кредитов на регистрацию,
     # дальше PAYG ($0.28/$0.42 за 1M на V3.2). Off-peak 50–75% скидка 16:30–00:30 UTC.
     # Prefix caching (cache hit 4–10× дешевле miss) — структурируй промпты так, чтобы
@@ -260,6 +267,7 @@ _ADHOC_DEFAULT_API_KEY_ENV: dict[str, str] = {
     # OpenAICompatProvider не шлёт Authorization). Проверено 2026-08-01: все
     # free-модели отвечают и с ключом, и без. Держим ради возможного подъёма лимитов.
     "opencode": "OPENCODE_API_KEY",
+    "codestral": "MISTRAL_API_KEY",
     # ovhcloud — anonymous, no env key. Excluded from ad-hoc resolution because
     # ad-hoc requires an env var to be set (see build_adhoc_provider). Configure
     # via providers: yaml entry with kind: ovhcloud (no api_key_env).
