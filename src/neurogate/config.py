@@ -256,6 +256,10 @@ _ADHOC_DEFAULT_API_KEY_ENV: dict[str, str] = {
     "kilo": "KILO_API_KEY",
     "ollama": "OLLAMA_API_KEY",
     "vercel": "AI_GATEWAY_API_KEY",
+    # opencode — ключ НЕОБЯЗАТЕЛЕН (kind в _NO_API_KEY_KINDS, при пустом ключе
+    # OpenAICompatProvider не шлёт Authorization). Проверено 2026-08-01: все
+    # free-модели отвечают и с ключом, и без. Держим ради возможного подъёма лимитов.
+    "opencode": "OPENCODE_API_KEY",
     # ovhcloud — anonymous, no env key. Excluded from ad-hoc resolution because
     # ad-hoc requires an env var to be set (see build_adhoc_provider). Configure
     # via providers: yaml entry with kind: ovhcloud (no api_key_env).
