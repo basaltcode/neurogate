@@ -27,11 +27,11 @@
 | 🟢 | 🔒 | **Z.ai** | `ZAI_API_KEY` | concurrency-only | нет | нет | GLM-4.5-Flash permanent free. China upstream — оф. заявляет «no training», но юрисдикция КНР. |
 | 🟢 | 🔒 | **Cerebras** | `CEREBRAS_API_KEY` | 5–30 RPM, без RPD | да | нет | Узкий выбор моделей, но потолка нет. Enterprise-friendly TOS. |
 | 🟢 | ⚠️ | **Mistral** | `MISTRAL_API_KEY` | ~4 RPM, без RPD | да | нет | Experiment plan. На free тренируется на твоих промптах. Paid plan — opt-out. |
-| 🟡 | 🔒 | **SambaNova** | `SAMBANOVA_API_KEY` | 20 RPD **на модель** | нет | нет | 4 модели = 80 RPD на ключ. Enterprise-friendly. |
+| 🔵 | 🔒 | **SambaNova** | `SAMBANOVA_API_KEY` | **trial credits, не free-tier** | нет | нет | ⚠️ Кредиты кончились → `402 balance_units: 0`, сами не восстановятся. Enterprise-friendly TOS. |
 | 🟡 | ⚠️ | **Groq** | `GROQ_API_KEY` | 30 RPM, 1k–14.4k RPD | нет | нет | Самый быстрый onboarding. Privacy policy позволяет использовать промпты для improvements. |
 | 🟡 | ⚠️ | **Gemini (AI Studio)** | `GEMINI_API_KEY` | 10 RPM, 250-1500 RPD | нет | нет | Per-project: 2-3 GCP-проекта = ×N квота. **На free tier Google использует промпты для улучшения моделей.** Paid Vertex — opt-out. |
-| 🟡 | 🔒 | **Cloudflare Workers AI** | `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` | 300 RPD (Llama 70B) | нет | нет | Edge inference, image gen бесплатно. CF не тренирует. |
-| 🟡 | 🔒 | **GitHub Models** | `GITHUB_MODELS_TOKEN` | 50–150 RPD | нет | нет | gpt-5-mini в free tier. Microsoft не тренирует на промптах GitHub Models. |
+| 🟡 | 🔒 | **Cloudflare Workers AI** | `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` | **10 000 нейронов/сутки на ВЕСЬ аккаунт** | нет | нет | Лимит общий для всех `cloudflare:*`, не на модель. Флагманы уезжают на Workers Paid через ~6 недель. CF не тренирует. |
+| ⛔ | — | ~~**GitHub Models**~~ | ~~`GITHUB_MODELS_TOKEN`~~ | **платформа закрыта 2026-07-30** | — | — | Выведена полностью. Записи удалены из config.yaml. См. §9. |
 | 🟡 | ⚠️ | **OpenRouter (free)** | `OPENROUTER_API_KEY` | 20 RPM, 50 RPD (1000 с $10) | нет | нет\* | Каждая `:free`-модель имеет свою policy — у некоторых тренировка включена. Читай каточку модели. |
 | 🟡 | ⚠️ | **FreeTheAi** | `FREETHEAI_API_KEY` | 10 RPM, 1 concurrent | нет (Discord) | нет | **Требует daily Discord `/checkin`**. Privacy не задекларирована — считай что промпты видят. |
 | 🟡 | 🔒 | **OVHcloud** | — (anon) | 2 RPM на IP | нет | нет | EU-инфра, без ключа, не тренирует. |
@@ -43,6 +43,12 @@
 | 🟣 | 🟣 | **LibreTranslate** | — (anon) | varies | нет | нет | Public mirror. Логи могут вестись на стороне зеркала. |
 | 🟣 | 🟣 | **MyMemory** | `MYMEMORY_CONTACT_EMAIL` (опц) | 5k–50k chars/IP | нет | нет | Community translation memory — твои тексты могут пополнять корпус. |
 | 🟣 | 🔒 | **Edge TTS** | — (anon) | без лимита | нет | нет | MS Edge — голос синтезируется serverside, текст не сохраняется. |
+| 🟣 | ⚠️ | **OpenCode Zen** | `OPENCODE_API_KEY` (опц.) | без ключа, лимиты не опубликованы | нет | нет | ⭐ Работает анонимно. Независимые бакеты к DeepSeek-V4-Flash, Nemotron-3-Ultra, Laguna. «Free models may use data for improvement». См. §19. |
+| 🟢 | ⚠️ | **Mistral Codestral** | `MISTRAL_API_KEY` | 30 RPM / 2000 RPD | да | нет | Отдельный хост со **своей** квотой на том же ключе — реальный прирост ёмкости. См. §20. |
+| 🔵 | ⚠️ | **ModelScope** | `MODELSCOPE_API_KEY` | 2000 RPD / ≤500 на модель | — | нет | ⚠️ Сейчас 401. Требует Alibaba-аккаунт + real-name verification. Низкий приоритет — см. §18. |
+| 🔵 | ⚠️ | **SiliconFlow** | `SILICONFLOW_API_KEY` | 1000 RPM / 50K TPM | — | нет | ⚠️ Сейчас 403 — нужна identity verification. |
+| 🟡 | ⚠️ | **Kilo Code** | `KILO_API_KEY` | ~200 req/hr | нет | нет | Шлюз к poolside/step/nemotron `:free`. `nvidia/nemotron-3-super` логирует промпты для NVIDIA. |
+| 🟢 | ⚠️ | **Poolside** | `POOLSIDE_API_KEY` | не опубликованы | нет | нет | Кодовые Laguna. У прямого API остался только `laguna-xs-2.1`. |
 | 🟣 | 🟣 | **AIhorde** | — (anon) | community queue | нет | нет | Распределённый inference — твой prompt видит worker, который на нём генерирует картинку. |
 
 \* OpenRouter не требует карту для базового free tier, но $10 однократный депозит поднимает лимиты в 20 раз.
@@ -118,7 +124,16 @@
 - **ENV**: `CLOUDFLARE_API_KEY` (токен) + `CLOUDFLARE_ACCOUNT_ID`
 - **Нюанс**: единственный провайдер, которому нужны **две** переменные. Account ID нельзя передать как env — Cloudflare вшивает его в URL запроса. 300 RPD на Llama 70B fp8-fast.
 
-### 9. GitHub Models
+### 9. GitHub Models — ⛔ ПЛАТФОРМА ЗАКРЫТА 2026-07-30
+
+> **Не тратить время.** GitHub Models полностью выведена из эксплуатации 30 июля 2026 —
+> playground, каталог моделей, inference API и BYOK недоступны никому, включая действующих
+> пользователей ([changelog](https://github.blog/changelog/2026-07-01-github-models-is-being-fully-retired-on-july-30-2026/)).
+> Закрытию предшествовало прекращение регистрации новых пользователей в июне и брауноты 16 и 23 июля.
+> Все 12 записей `github:*` удалены из config.yaml. Секция ниже оставлена как исторический след —
+> GitHub Models до сих пор висит первым пунктом в чужих подборках «free LLM API».
+> Замена: модели никуда не делись, они у своих провайдеров. gpt-4.1-mini/4o-mini — только платный
+> OpenAI; llama-3.3-70b, deepseek, эмбеддинги — уже продублированы в конфиге у других провайдеров.
 
 - **Регистрация**: любой GitHub-аккаунт
 - **Получить токен**: https://github.com/settings/personal-access-tokens → *Generate new token (fine-grained)* → Account permissions → **Models: Read-only**
@@ -260,6 +275,99 @@
 - **Когда использовать**: исключительно как **deep fallback / last-resort** в конце chain — «лучше отдать что-то, чем 503». В основной chain ставить нет смысла из-за 2 RPM на IP.
 - **Реализация**: `OpenAICompatProvider` пропускает `Authorization` header при пустом `api_key` (см. providers.py — изменение из этого PR).
 - **kind**: `ovhcloud`.
+
+### 18. ModelScope (Alibaba) — сейчас ЗАБЛОКИРОВАН
+
+- **Токен**: https://modelscope.cn/my/myaccesstoken → создать Access Token.
+- **ENV**: `MODELSCOPE_API_KEY`
+- **Endpoint**: `https://api-inference.modelscope.cn/v1` — OpenAI-совместимый.
+- **Формат ключа**: `ms-…` (39 символов). ⚠️ Не путать с Alibaba Cloud **Model Studio**, у того ключ
+  `sk-…` — это другая платформа, ключи невзаимозаменяемы.
+- **Лимиты**: 2000 RPD общих, ≤500 RPD на модель.
+- **⚠️ Требует аккаунт Alibaba Cloud + real-name verification** (实名认证, по китайскому удостоверению).
+- **Состояние на 2026-08-03**: `GET /v1/models` → **200** (каталог публичный, сервис жив),
+  `POST /v1/chat/completions` → **401** «valid ModelScope token is supplied». Формат ключа в `.env`
+  правильный, значит дело в самом токене либо в слетевшей верификации аккаунта — не в конфиге.
+  Перевыпуск токена может не помочь, если не пройдена real-name verification.
+- **Стоит ли чинить**: **уже не приоритет.** Из 55 моделей каталога всё ценное имеет свою дверь:
+  GLM-5.2, GLM-5.1, GLM-5, DeepSeek-V4-Pro/Flash, MiniMax-M3, Step-3.7-Flash, Qwen3.5-27B/35B —
+  всё подключено через NVIDIA NIM и opencode. Уникальны только **Kimi-K2.5** (единственная свободная
+  дверь к Moonshot после того, как Cloudflare увёл обе Kimi на платный план),
+  Qwen3.5-397B-A17B, Qwen3.5-122B-A10B, Tencent Hy3, Intern-S2-Preview, MiMo-V2-Flash.
+- **kind**: `modelscope`.
+
+### 19. OpenCode Zen — БЕЗ КЛЮЧА И БЕЗ РЕГИСТРАЦИИ ⭐
+
+Самый дешёвый по усилиям провайдер в списке: работает анонимно, ничего заводить не нужно.
+
+- **Регистрация**: НЕ ТРЕБУЕТСЯ. Проверено 2026-08-01: анонимный `POST /chat/completions` → 200.
+- **ENV**: `OPENCODE_API_KEY` — **необязательный**. Ключ можно взять на https://opencode.ai/zen
+  (карта и телефон не нужны), но все free-модели отвечают одинаково и с ним, и без него;
+  каталог тоже одинаковый. Держим ключ на случай, что он поднимает лимиты под нагрузкой.
+- **Endpoint**: `https://opencode.ai/zen/v1` — OpenAI-совместимый.
+- **Free-модели** (суффикс `-free`): `deepseek-v4-flash-free`, `nemotron-3-ultra-free`,
+  `laguna-s-2.1-free`, `ling-3.0-flash-free`, `north-mini-code-free`, `big-pickle`, `mimo-v2.5-free`.
+  Все дали чистый русский на пробе. Платный каталог (claude-*, gpt-5.*, glm-5.2, kimi-k2.7) требует ключ и деньги.
+- **Чем ценен**: даёт **независимые бакеты** к моделям, которые уже есть через NIM/OpenRouter.
+  Когда NIM отдаёт `503 ResourceExhausted`, запрос уходит сюда. Плюс `north-mini-code` здесь
+  **не ест** общий бакет Cohere в 1000 вызовов/мес.
+- **⚠️ «Free models may use data for improvement»** — не слать чувствительное.
+- **⚠️ Доступность нестабильна**: `big-pickle` и `mimo-v2.5-free` 2026-07-27 отдавали
+  «No provider available», а 2026-08-01 заработали. `laguna-s-2.1-free` и `ling-3.0-flash-free`
+  периодически ловят `provider_rate_limit_exceeded`. Держать в хвостах цепочек, не в голове.
+- **⚠️ `ling-3.0-flash-free`**: промо Ant Group закончилось **2026-08-03**.
+- **kind**: `opencode` (в `_NO_API_KEY_KINDS`, при пустом ключе `Authorization` не шлётся).
+
+### 20. Mistral Codestral — отдельная квота на том же ключе
+
+- **Регистрация**: ключ тот же, что у La Plateforme (см. §10), отдельно заводить не нужно.
+- **ENV**: `MISTRAL_API_KEY`
+- **Endpoint**: `https://codestral.mistral.ai/v1` — OpenAI-совместимый.
+- **Зачем отдельная запись**: у `api.mistral.ai` **один общий бакет** ~50 RPM / 25K TPM на ключ,
+  поэтому лишние `mistral:*` записи ёмкости НЕ добавляют. А этот хост даёт свой бакет —
+  то есть реальный прирост пропускной способности бесплатно.
+- **Лимиты**: 30 RPM / 2000 RPD по данным awesome-free-llm-apis.
+  ⚠️ Вендорские доки free-статус этого эндпоинта не подтверждают — цифры из стороннего источника.
+- **Проверено 2026-08-01**: HTTP 200, 0.4s, корректный русский.
+- **kind**: `codestral`.
+
+## Состояние провайдеров на 2026-08-03
+
+Живой аудит всех записей конфига (реальные вызовы, не догадки). Здесь — только то, что **не работает**,
+и что с этим делать. Провайдеры, требующие действия с твоей стороны:
+
+| Провайдер | Код | Что случилось | Что делать |
+|---|---|---|---|
+| **FreeTheAi** (6 записей) | 403 | `daily_checkin_required` | Discord → `/checkin`. Каждые 24ч, автоматизировать нельзя (см. §13) |
+| **SiliconFlow** (5) | 403 | «complete identity verification» | Пройти верификацию на cloud.siliconflow.cn либо забить |
+| **SambaNova** (5) | 402 | `balance_units: 0` | ⚠️ Это **не free-tier, а trial-кредиты** — сами не восстановятся. Либо платить, либо удалять |
+| **DeepSeek direct** (2) | 402 | Insufficient Balance | Top-up от $2 — **но не нужно**: V4-Pro и V4-Flash бесплатны через NIM |
+| **ModelScope** (2) | 401 | Токен отвергнут | См. §18 — низкий приоритет |
+| **Z.ai direct** | 429 | «Insufficient balance or no resource package» | GLM-5.2 бесплатна через NIM — чинить не обязательно |
+| **Ollama Cloud** | 403 | Лучшие модели «requires a subscription» | Бесплатно работает только `minimax-m3` |
+| **Vercel AI Gateway** | 403 | `customer_verification_required` | Нужна привязка карты. Записи закомментированы в config.yaml |
+
+**Отвалилось окончательно (удалено из конфига):**
+
+| Что | Дата | Причина |
+|---|---|---|
+| **GitHub Models** — вся платформа | **2026-07-30** | Полностью закрыта: playground, каталог, inference API, BYOK. Все 12 записей `github:*` удалены. См. §9 — секция устарела |
+| `groq:llama-3.3-70b`, `groq:llama-3.1-8b-instant` | **2026-08-16** | EOL по [console.groq.com/docs/deprecations](https://console.groq.com/docs/deprecations). Выведены из цепочек заранее: сейчас ещё отдают 200, то есть live-проба даёт ложный all-clear |
+| `@cf/moonshotai/kimi-k2.6`, `kimi-k2.7-code`, `@cf/zai-org/glm-5.2` | ~2026-07-28 | Cloudflare увёл на **Workers Paid plan** (403). Паттерн: CF выкатывает флагман на free и закрывает через ~6 недель — не ставить свежий CF-флагман в критическую позицию |
+| `poolside:laguna-m.1`, `poolside:laguna-s-2.1` | ~2026-07-31 | Убраны из **прямого** API (404). Через шлюзы kilo/openrouter/opencode/nvidia модели живы |
+| `ollama:minimax-m2.5` | **2026-07-31** | retired |
+| `nvidia:nemotron-ultra-253b` | — | 404, снята с NIM |
+| `gemini-2.5-flash`, `2.5-flash-lite`, `2.5-pro` | **2026-10-16** | Google объявил shutdown — пока работают |
+
+**Поправки к таблице квот выше** (проверено живьём, в самой таблице ещё старые цифры):
+
+- **Cloudflare Workers AI** — не «300 RPD на модель», а **10 000 «нейронов» в сутки НА ВЕСЬ АККАУНТ**,
+  общих для всех `cloudflare:*`. Чем больше cf-записей в цепочках, тем быстрее выгорает общий бюджет;
+  при исчерпании все разом отдают 429 «you have used up your daily free allocation».
+- **SambaNova** — не 🟡 free-tier, а 🔵 **trial credits**. `402` это конечное состояние.
+- **Cohere** — 1000 вызовов/мес это бакет на **весь ключ**, общий для chat + embed + rerank.
+  Добавление новых `cohere:*` записей ёмкости не добавляет.
+- **GitHub Models** — строку можно удалять, платформы больше нет.
 
 ## Платные расширения (опционально)
 
