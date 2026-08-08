@@ -97,6 +97,16 @@ PROVIDER_KIND_DEFAULTS = {
     # свой бакет. Лимиты 30 RPM / 2000 RPD взяты из awesome-free-llm-apis, вендорские
     # доки free-статус НЕ подтверждают.
     "codestral": {"base_url": "https://codestral.mistral.ai/v1"},
+    # ZenMux (zenmux.ai) — OpenAI-compat агрегатор. Ключ: zenmux.ai/settings/keys
+    # (регистрация без карты). Каталог 151 модель, но БЕСПЛАТНЫ ТРИ, с суффиксом
+    # `-free` и подтверждённым pricing value=0 за prompt и completion:
+    #   deepseek/deepseek-v4-flash-free  — 1M ctx, reasoning
+    #   z-ai/glm-4.7-flash-free          — 200K ctx, reasoning
+    #   z-ai/glm-4.6v-flash-free         — 200K ctx, reasoning + vision И VIDEO на вход
+    # Смысл подключения — независимые бакеты к моделям, которые уже есть через NIM/opencode,
+    # плюс glm-4.6v единственный у нас с video-входом.
+    # ⚠️ Без ключа отдаёт 403 access_denied — записи будут пропускаться при старте.
+    "zenmux": {"base_url": "https://zenmux.ai/api/v1"},
     # DeepSeek direct API. OpenAI-compat. 5M токенов кредитов на регистрацию,
     # дальше PAYG ($0.28/$0.42 за 1M на V3.2). Off-peak 50–75% скидка 16:30–00:30 UTC.
     # Prefix caching (cache hit 4–10× дешевле miss) — структурируй промпты так, чтобы
@@ -268,6 +278,7 @@ _ADHOC_DEFAULT_API_KEY_ENV: dict[str, str] = {
     # free-модели отвечают и с ключом, и без. Держим ради возможного подъёма лимитов.
     "opencode": "OPENCODE_API_KEY",
     "codestral": "MISTRAL_API_KEY",
+    "zenmux": "ZENMUX_API_KEY",
     # ovhcloud — anonymous, no env key. Excluded from ad-hoc resolution because
     # ad-hoc requires an env var to be set (see build_adhoc_provider). Configure
     # via providers: yaml entry with kind: ovhcloud (no api_key_env).
