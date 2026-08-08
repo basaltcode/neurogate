@@ -38,3 +38,6 @@ tests/
 
 # Local backups
 .git.backup-pre-oss/
+
+# scratch: временная установка ruamel для правки config.yaml (не должна попадать в репо/на прод)
+pylibs/
